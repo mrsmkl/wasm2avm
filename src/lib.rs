@@ -9,7 +9,7 @@ mod stringtable;
 
 use wasm_bindgen::prelude::*;
 use crate::utils::{process_wasm, has_label, get_inst, resolve_labels};
-use crate::mavm::{Label,Value};
+use crate::mavm::{Label,Value,Instruction};
 use crate::uint256::{Uint256};
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
@@ -27,6 +27,13 @@ extern "C" {
     fn usegas(gas: i32);
 }
 
+fn push_int(output: &mut Vec<u8>, a: &Uint256) {
+    let bytes = a.to_bytes_be();
+    for i in 0..8 {
+        output.push(bytes[i+24])
+    }
+}
+
 #[wasm_bindgen]
 pub fn test() -> u32 {
     let mut input = vec![];
@@ -38,26 +45,30 @@ pub fn test() -> u32 {
 
     let ops = process_wasm(&input);
     let (res_ops, _) = resolve_labels(ops.clone());
+    let ops : Vec<&Instruction> = ops.iter().rev().collect();
 
     let mut output = vec![];
 
-    for (idx, op) in res_ops.iter().enumerate() {
+    for (idx, op) in res_ops.iter().rev().enumerate() {
         let inst = get_inst(&op);
         output.push(inst);
         match &op.immediate {
             None => output.push(0),
             Some (Value::Int(a)) => {
                 output.push(1);
-                let bytes = a.to_bytes_be();
-                for i in 0..8 {
-                    output.push(bytes[i+24])
-                }
+                push_int(&mut output, a);
             },
             Some (Value::Tuple(tup)) => {
                 if tup.len() == 5 {
                     output.push(2) // main env
                 } else if tup.len() == 2 {
-                    output.push(3) // main env
+                    match &tup[1] {
+                        Value::Int(a) => {
+                            output.push(3);
+                            push_int(&mut output, &a);
+                        },
+                        _ => panic!("bad immed")
+                    }
                 } else {
                     panic!("bad immed")
                 }
@@ -71,24 +82,9 @@ pub fn test() -> u32 {
         } else {
             output.push(0)
         }
-        /*
-        match ops[idx].clone().get_label() {
-            None => output.push(0),
-            Some(Label::Evm(num)) => {
-                output.push(1);
-                let bytes = Uint256::from_usize(*num).to_bytes_be();
-                for i in 0..8 {
-                    output.push(bytes[i+24])
-                }
-            }
-            Some(Label::WasmFunc(num)) => {
-                output.push(2)
-            }
-            _ => {
-                panic!("bad label")
-            }
-        }*/
     };
+
+    output.push(255);
 
     for i in 0..output.len() {
         write_buffer(i as i32, output[i as usize] as i32)

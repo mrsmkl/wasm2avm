@@ -1747,7 +1747,7 @@ pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
     // init.push(immed_op(AVMOpcode::Rset, Value::new_tuple(vec![Value::new_buffer(vec![]), int_from_usize(0)])));
     init.push(push_value(Value::new_tuple(vec![
         Value::new_buffer(vec![]), // memory
-        int_from_usize(0), // memory limit
+        int_from_usize(0), // jump table
         Value::new_buffer(vec![123, 234, 12]), // IO buffer
         int_from_usize(3), // IO len
         int_from_usize(1000000), // gas left
