@@ -45,7 +45,7 @@ fn num_func_returns(ft: &FunctionType) -> usize {
     ft.results().len()
 }
 
-fn simple_op(op: AVMOpcode) -> Instruction {
+pub fn simple_op(op: AVMOpcode) -> Instruction {
     Instruction::from_opcode(Opcode::AVMOpcode(op), DebugInfo::from(None))
 }
 
@@ -1748,7 +1748,7 @@ pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
     init.push(push_value(Value::new_tuple(vec![
         Value::new_buffer(vec![]), // memory
         int_from_usize(0), // jump table
-        Value::new_buffer(vec![123, 234, 12]), // IO buffer
+        Value::new_buffer(vec![]), // IO buffer
         int_from_usize(3), // IO len
         int_from_usize(1000000), // gas left
     ])));

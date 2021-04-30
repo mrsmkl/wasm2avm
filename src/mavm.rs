@@ -929,6 +929,7 @@ pub enum Opcode {
 #[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr, Eq, PartialEq, Hash)]
 #[repr(u8)]
 pub enum AVMOpcode {
+    Zero = 0x00,
     Plus = 0x01,
     Mul,
     Minus,
@@ -1298,6 +1299,7 @@ impl Opcode {
 
     pub fn to_number(&self) -> Option<u8> {
         match self {
+            Opcode::AVMOpcode(AVMOpcode::Zero) => Some(0x00),
             Opcode::AVMOpcode(AVMOpcode::Plus) => Some(0x01),
             Opcode::AVMOpcode(AVMOpcode::Mul) => Some(0x02),
             Opcode::AVMOpcode(AVMOpcode::Minus) => Some(0x03),

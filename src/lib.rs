@@ -8,9 +8,10 @@ mod uint256;
 mod stringtable;
 
 use wasm_bindgen::prelude::*;
-use crate::utils::{process_wasm, has_label, get_inst, resolve_labels};
-use crate::mavm::{Label,Value,Instruction};
+use crate::utils::{process_wasm, has_label, get_inst, resolve_labels, simple_op};
+use crate::mavm::{Label,Value,Instruction,AVMOpcode};
 use crate::uint256::{Uint256};
+use ethers_core::utils::keccak256;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
 // allocator.
@@ -34,20 +35,55 @@ fn push_int(output: &mut Vec<u8>, a: &Uint256) {
     }
 }
 
-#[wasm_bindgen]
-pub fn test() -> u32 {
-    let mut input = vec![];
-    let input_len = getlen();
-    for i in 0..input_len {
-        input.push(read_buffer(i) as u8)
+fn push_bytes32(output: &mut Vec<u8>, a: &Uint256) {
+    let bytes = a.to_bytes_be();
+    for i in 0..32 {
+        output.push(bytes[i])
     }
-    usegas(input_len / 10 + 1);
+}
 
+fn hash_instruction(inst: &Instruction, prev_hash: &Uint256) -> Uint256 {
+    match &inst.immediate {
+        None => {
+            let mut buf = vec![];
+            buf.push(1u8);
+            println!("{:?}", inst.opcode);
+            buf.push(get_inst(inst));
+            push_bytes32(&mut buf, prev_hash);
+            Uint256::from_bytes(&keccak256(&buf))
+        }
+        Some(immed) => {
+            let mut buf = vec![];
+            buf.push(1u8);
+            buf.push(get_inst(inst));
+            push_bytes32(&mut buf, prev_hash);
+            println!("{:?}", immed);
+            if let Value::Int(i) = immed.avm_hash() {
+                push_bytes32(&mut buf, &i);
+            }
+            Uint256::from_bytes(&keccak256(&buf))
+        }
+    }
+}
+
+fn compute_hash(ops : &Vec<Instruction>) -> Uint256 {
+    // start from errCodePoint
+    let mut hash = hash_instruction(&simple_op(AVMOpcode::Zero), &Uint256::from_u64(0));
+    for inst in ops.iter().rev() {
+        hash = hash_instruction(inst, &hash)
+    }
+    hash
+}
+
+pub fn process(input: &[u8]) -> Vec<u8> {
     let ops = process_wasm(&input);
     let (res_ops, _) = resolve_labels(ops.clone());
     let ops : Vec<&Instruction> = ops.iter().rev().collect();
 
     let mut output = vec![];
+
+    let hash = compute_hash(&res_ops);
+    push_bytes32(&mut output, &hash);
 
     for (idx, op) in res_ops.iter().rev().enumerate() {
         let inst = get_inst(&op);
@@ -85,6 +121,19 @@ pub fn test() -> u32 {
     };
 
     output.push(255);
+    output
+}
+
+#[wasm_bindgen]
+pub fn test() -> u32 {
+    let mut input = vec![];
+    let input_len = getlen();
+    for i in 0..input_len {
+        input.push(read_buffer(i) as u8)
+    }
+    usegas(input_len / 10 + 1);
+
+    let output = process(&input);
 
     for i in 0..output.len() {
         write_buffer(i as i32, output[i as usize] as i32)
