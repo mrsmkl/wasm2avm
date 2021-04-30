@@ -1570,6 +1570,7 @@ pub fn make_table(tab: &[Value]) -> Value {
 
 fn value_replace_labels(v: Value, label_map: &HashMap<Label, Value>) -> Result<Value, Label> {
     match v {
+        Value::HashOnly(_) => Ok(v),
         Value::Int(_) => Ok(v),
         Value::CodePoint(_) => Ok(v),
         Value::Buffer(_) => Ok(v),

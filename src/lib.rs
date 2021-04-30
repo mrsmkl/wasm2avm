@@ -66,13 +66,30 @@ fn hash_instruction(inst: &Instruction, prev_hash: &Uint256) -> Uint256 {
     }
 }
 
-fn compute_hash(ops : &Vec<Instruction>) -> Uint256 {
+fn compute_hash(ops : &Vec<Instruction>) -> (Uint256, Uint256) {
     // start from errCodePoint
     let mut hash = hash_instruction(&simple_op(AVMOpcode::Zero), &Uint256::from_u64(0));
+    let mut labels = vec![];
     for inst in ops.iter().rev() {
-        hash = hash_instruction(inst, &hash)
+        hash = hash_instruction(inst, &hash);
+        if crate::utils::has_label(&inst) {
+            println!("Found label at {:?}", hash);
+            labels.push(Value::HashOnly(hash.clone()))
+        }
     }
-    hash
+
+    // println!("Labels are here {:?}", labels);
+    let mut labels_rev = vec![];
+    for a in labels.iter().rev() {
+        labels_rev.push(a.clone())
+    }
+    let tab = crate::utils::make_table(&labels_rev);
+    let table_hash = if let Value::Int(i) = tab.avm_hash() {
+        i
+    } else {
+        Uint256::from_u64(0)
+    };
+    (hash, table_hash)
 }
 
 pub fn process(input: &[u8]) -> Vec<u8> {
@@ -82,8 +99,9 @@ pub fn process(input: &[u8]) -> Vec<u8> {
 
     let mut output = vec![];
 
-    let hash = compute_hash(&res_ops);
+    let (hash, thash) = compute_hash(&res_ops);
     push_bytes32(&mut output, &hash);
+    push_bytes32(&mut output, &thash);
 
     for (idx, op) in res_ops.iter().rev().enumerate() {
         let inst = get_inst(&op);

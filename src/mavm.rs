@@ -698,6 +698,7 @@ impl Buffer {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Value {
+    HashOnly(Uint256),
     Int(Uint256),
     Tuple(Rc<Vec<Value>>),
     CodePoint(CodePt),
@@ -736,12 +737,16 @@ impl Value {
             Value::Label(_) => {
                 panic!("tried to run type instruction on a label");
             }
+            Value::HashOnly(_) => {
+                panic!("tried to run type instruction on a hashed value");
+            }
         }
     }
 
     pub fn replace_labels(self, label_map: &HashMap<Label, CodePt>) -> Result<Self, Label> {
         match self {
             Value::Int(_) => Ok(self),
+            Value::HashOnly(_) => Ok(self),
             Value::CodePoint(_) => Ok(self),
             Value::Buffer(_) => Ok(self),
             Value::Label(label) => {
@@ -773,6 +778,7 @@ impl Value {
         func_offset: usize,
     ) -> (Self, usize) {
         match self {
+            Value::HashOnly(_) => (self, 0),
             Value::Int(_) => (self, 0),
             Value::Buffer(_) => (self, 0),
             Value::Tuple(v) => {
@@ -806,7 +812,7 @@ impl Value {
 
     pub fn xlate_labels(self, label_map: &HashMap<Label, &Label>) -> Self {
         match self {
-            Value::Int(_) | Value::CodePoint(_) | Value::Buffer(_) => self,
+            Value::Int(_) | Value::CodePoint(_) | Value::Buffer(_)  | Value::HashOnly(_) => self,
             Value::Tuple(v) => {
                 let mut newv = Vec::new();
                 for val in &*v {
@@ -836,6 +842,7 @@ impl Value {
     pub fn avm_hash(&self) -> Value {
         //BUGBUG: should do same hash as AVM
         match self {
+            Value::HashOnly(ui) => Value::Int(ui.clone()),
             Value::Int(ui) => Value::Int(ui.avm_hash()),
             Value::Buffer(buf) => Value::Int(buf.avm_hash()),
             Value::Tuple(v) => {
@@ -878,6 +885,7 @@ impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Value::Int(i) => i.fmt(f),
+            Value::HashOnly(i) => write!(f, "HashOnly({})", i),
             Value::Buffer(buf) => match &buf.elem {
                 BufferElem::Leaf(vec) => write!(f, "Buffer(Leaf({}))", vec.len()),
                 BufferElem::Node(vec, h) => write!(f, "Buffer(Node({}, {}))", vec.len(), h),
