@@ -1,5 +1,5 @@
 
-use avm2wasm::process;
+use wasm2avm::process;
 use std::env;
 use std::fs::File;
 use std::io::Read;

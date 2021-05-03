@@ -1,5 +1,5 @@
 [package]
-name = "avm2wasm"
+name = "wasm2avm"
 version = "0.1.0"
 authors = ["Sami Mäkelä <mrsmkl@gmail.com>"]
 edition = "2018"

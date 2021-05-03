@@ -57,11 +57,11 @@ fn hash_instruction(inst: &Instruction, prev_hash: &Uint256) -> Uint256 {
             buf.push(1u8);
             buf.push(get_inst(inst));
             if let Value::Int(i) = immed.avm_hash() {
-                println!("immed hash {}", i);
+                // println!("immed hash {}", i);
                 push_bytes32(&mut buf, &i);
             }
             push_bytes32(&mut buf, prev_hash);
-            println!("hash len {}", buf.len());
+            // println!("hash len {}", buf.len());
             Uint256::from_bytes(&keccak256(&buf))
         }
     }
@@ -73,9 +73,9 @@ fn compute_hash(ops : &Vec<Instruction>) -> (Uint256, Uint256) {
     let mut labels = vec![];
     for inst in ops.iter().rev() {
         hash = hash_instruction(inst, &hash);
-        println!("After {} hash is {}", inst, hash);
+        // println!("After {} hash is {}", inst, hash);
         if crate::utils::has_label(&inst) {
-            println!("Found label at {}", hash);
+            // println!("Found label at {}", hash);
             labels.push(Value::HashOnly(hash.clone(), 1))
         }
     }
@@ -101,6 +101,11 @@ pub fn process(input: &[u8]) -> Vec<u8> {
     let ops : Vec<&Instruction> = ops.iter().rev().collect();
 
     let mut output = vec![];
+
+/*    let mut buf = vec![];
+    buf.push(1u8);
+    let hash = Uint256::from_bytes(&keccak256(&buf)); */
+    // let hash = Uint256::from_bytes(&keccak256(&input));
 
     let (hash, thash) = compute_hash(&res_ops);
     push_bytes32(&mut output, &hash);
@@ -141,8 +146,8 @@ pub fn process(input: &[u8]) -> Vec<u8> {
         }
     };
 
-    println!("Bufefr hash {}", Value::new_buffer(vec![]).avm_hash());
-    println!("Table hash {}", thash);
+    // println!("Bufefr hash {}", Value::new_buffer(vec![]).avm_hash());
+    // println!("Table hash {}", thash);
 
     output.push(255);
     output
@@ -172,16 +177,16 @@ pub fn test() -> u32 {
 #[wasm_bindgen]
 pub fn test() -> u32 {
 
-    let input = hex::decode("0061736d0100000001060160017f017f03020100070801046d61696e00000a070105002000690b").unwrap();
+    let input = hex::decode("0061736d0100000001130460017f017f6000017f60027f7f0060017f00024e0403656e760d6765746c656e5f627566666572000103656e760d7365746c656e5f627566666572000303656e760b726561645f627566666572000003656e760c77726974655f627566666572000203020101070801047465737400040a0d010b00410041de01100341000b").unwrap();
 
-    let v = load(&input);
+    let v = process(&input);
 
     /*
     for i in 0..32 {
         write_buffer(i, output[i as usize] as i32)
     };
-    */
     setlen(v.len() as i32);
+    */
 
     0
 
