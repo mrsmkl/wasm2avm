@@ -1570,7 +1570,7 @@ pub fn make_table(tab: &[Value]) -> Value {
 
 fn value_replace_labels(v: Value, label_map: &HashMap<Label, Value>) -> Result<Value, Label> {
     match v {
-        Value::HashOnly(_) => Ok(v),
+        Value::HashOnly(_,_) => Ok(v),
         Value::Int(_) => Ok(v),
         Value::CodePoint(_) => Ok(v),
         Value::Buffer(_) => Ok(v),
@@ -1750,8 +1750,8 @@ pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
         Value::new_buffer(vec![]), // memory
         int_from_usize(0), // jump table
         Value::new_buffer(vec![]), // IO buffer
-        int_from_usize(3), // IO len
-        int_from_usize(1000000), // gas left
+        int_from_usize(0), // IO len
+        int_from_usize(100000), // gas left
     ])));
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(1)));
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(2)));

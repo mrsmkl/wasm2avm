@@ -47,7 +47,7 @@ fn hash_instruction(inst: &Instruction, prev_hash: &Uint256) -> Uint256 {
         None => {
             let mut buf = vec![];
             buf.push(1u8);
-            println!("{:?}", inst.opcode);
+            // println!("{:?}", inst.opcode);
             buf.push(get_inst(inst));
             push_bytes32(&mut buf, prev_hash);
             Uint256::from_bytes(&keccak256(&buf))
@@ -56,11 +56,12 @@ fn hash_instruction(inst: &Instruction, prev_hash: &Uint256) -> Uint256 {
             let mut buf = vec![];
             buf.push(1u8);
             buf.push(get_inst(inst));
-            push_bytes32(&mut buf, prev_hash);
-            println!("{:?}", immed);
             if let Value::Int(i) = immed.avm_hash() {
+                println!("immed hash {}", i);
                 push_bytes32(&mut buf, &i);
             }
+            push_bytes32(&mut buf, prev_hash);
+            println!("hash len {}", buf.len());
             Uint256::from_bytes(&keccak256(&buf))
         }
     }
@@ -72,9 +73,10 @@ fn compute_hash(ops : &Vec<Instruction>) -> (Uint256, Uint256) {
     let mut labels = vec![];
     for inst in ops.iter().rev() {
         hash = hash_instruction(inst, &hash);
+        println!("After {} hash is {}", inst, hash);
         if crate::utils::has_label(&inst) {
-            println!("Found label at {:?}", hash);
-            labels.push(Value::HashOnly(hash.clone()))
+            println!("Found label at {}", hash);
+            labels.push(Value::HashOnly(hash.clone(), 1))
         }
     }
 
@@ -89,6 +91,7 @@ fn compute_hash(ops : &Vec<Instruction>) -> (Uint256, Uint256) {
     } else {
         Uint256::from_u64(0)
     };
+    // let table_hash = Uint256::from_u64(0);
     (hash, table_hash)
 }
 
@@ -137,6 +140,9 @@ pub fn process(input: &[u8]) -> Vec<u8> {
             output.push(0)
         }
     };
+
+    println!("Bufefr hash {}", Value::new_buffer(vec![]).avm_hash());
+    println!("Table hash {}", thash);
 
     output.push(255);
     output
