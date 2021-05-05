@@ -148,8 +148,8 @@ pub fn process(input: &[u8]) -> (Vec<u8>, Vec<u8>) {
         }
     };
 
-    // println!("Bufefr hash {}", Value::new_buffer(vec![]).avm_hash());
-    // println!("Table hash {}", thash);
+    // println!("Buffer hash {}", Value::new_buffer(vec![]).avm_hash());
+    // println!("Op hash {}, Table hash {}, length {}", hash, thash, extra.len());
 
     extra.push(255);
     (output, extra)

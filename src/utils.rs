@@ -944,11 +944,12 @@ fn handle_function(
                 res.push(set_frame());
             }
             I32Const(x) => {
-                res.push(push_value(Value::Int(Uint256::from_usize(*x as usize))));
+                res.push(push_value(Value::Int(Uint256::from_u64(*x as u64))));
                 ptr = ptr + 1;
             }
             I64Const(x) => {
-                res.push(push_value(Value::Int(Uint256::from_usize(*x as usize))));
+                // println!("const {}", x);
+                res.push(push_value(Value::Int(Uint256::from_u64(*x as u64))));
                 ptr = ptr + 1;
             }
             // Just keep the expression stack
@@ -1678,19 +1679,23 @@ pub fn resolve_labels(arr: Vec<Instruction>) -> (Vec<Instruction>, Value) {
     (res, table_to_tuple(&tab, 0, 0, LEVEL - 1, tab.len()))
 }
 
-fn init_value(_m: &Module, expr: &InitExpr) -> usize {
+fn init_value(_m: &Module, expr: &InitExpr) -> u64 {
     // eprintln!("init {:?}", expr);
     match expr.code()[0] {
-        I32Const(a) => a as usize,
-        F32Const(a) => a as usize,
-        I64Const(a) => a as usize,
-        F64Const(a) => a as usize,
+        I32Const(a) => a as u64,
+        F32Const(a) => a as u64,
+        I64Const(a) => a as u64,
+        F64Const(a) => a as u64,
         _ => 0,
     }
 }
 
 fn int_from_usize(a: usize) -> Value {
     Value::Int(Uint256::from_usize(a))
+}
+
+fn int_from_u64(a: u64) -> Value {
+    Value::Int(Uint256::from_u64(a))
 }
 
 fn find_function(m: &Module, name: &str) -> Option<u32> {
@@ -1771,7 +1776,7 @@ pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
     let mut globals = 1;
     if let Some(sec) = module.global_section() {
         for g in sec.entries().iter() {
-            init.push(push_value(Value::Int(Uint256::from_usize(init_value(
+            init.push(push_value(Value::Int(Uint256::from_u64(init_value(
                 &module,
                 g.init_expr(),
             )))));
@@ -1785,7 +1790,7 @@ pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
     if let Some(sec) = module.data_section() {
         for seg in sec.entries().iter() {
             let offset = match seg.offset() {
-                Some(a) => init_value(&module, a),
+                Some(a) => init_value(&module, a) as usize,
                 None => 0,
             };
             for (i, bt) in seg.value().iter().enumerate() {
@@ -1896,7 +1901,7 @@ pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
         for seg in sec.entries().iter() {
             let offset = match seg.offset() {
                 None => 0,
-                Some(init) => init_value(&module, init),
+                Some(init) => init_value(&module, init) as usize,
             };
             for (idx, f_idx) in seg.members().iter().enumerate() {
                 let next_label = label;
