@@ -26,6 +26,7 @@ extern "C" {
     fn getlen() -> i32;
     fn write_buffer(idx: i32, c: i32);
     fn usegas(gas: i32);
+    fn wextra(idx: i32, c: i32);
 }
 
 fn push_int(output: &mut Vec<u8>, a: &Uint256) {
@@ -95,12 +96,13 @@ fn compute_hash(ops : &Vec<Instruction>) -> (Uint256, Uint256) {
     (hash, table_hash)
 }
 
-pub fn process(input: &[u8]) -> Vec<u8> {
+pub fn process(input: &[u8]) -> (Vec<u8>, Vec<u8>) {
     let ops = process_wasm(&input);
     let (res_ops, _) = resolve_labels(ops.clone());
     let ops : Vec<&Instruction> = ops.iter().rev().collect();
 
     let mut output = vec![];
+    let mut extra = vec![];
 
 /*    let mut buf = vec![];
     buf.push(1u8);
@@ -113,21 +115,21 @@ pub fn process(input: &[u8]) -> Vec<u8> {
 
     for (idx, op) in res_ops.iter().rev().enumerate() {
         let inst = get_inst(&op);
-        output.push(inst);
+        extra.push(inst);
         match &op.immediate {
-            None => output.push(0),
+            None => extra.push(0),
             Some (Value::Int(a)) => {
-                output.push(1);
-                push_int(&mut output, a);
+                extra.push(1);
+                push_int(&mut extra, a);
             },
             Some (Value::Tuple(tup)) => {
                 if tup.len() == 5 {
-                    output.push(2) // main env
+                    extra.push(2) // main env
                 } else if tup.len() == 2 {
                     match &tup[1] {
                         Value::Int(a) => {
-                            output.push(3);
-                            push_int(&mut output, &a);
+                            extra.push(3);
+                            push_int(&mut extra, &a);
                         },
                         _ => panic!("bad immed")
                     }
@@ -140,17 +142,17 @@ pub fn process(input: &[u8]) -> Vec<u8> {
             }
         }
         if has_label(&ops[idx]) {
-            output.push(1)
+            extra.push(1)
         } else {
-            output.push(0)
+            extra.push(0)
         }
     };
 
     // println!("Bufefr hash {}", Value::new_buffer(vec![]).avm_hash());
     // println!("Table hash {}", thash);
 
-    output.push(255);
-    output
+    extra.push(255);
+    (output, extra)
 }
 
 #[wasm_bindgen]
@@ -162,12 +164,16 @@ pub fn test() -> u32 {
     }
     usegas(input_len / 10 + 1);
 
-    let output = process(&input);
+    let (output, extra) = process(&input);
 
     for i in 0..output.len() {
         write_buffer(i as i32, output[i as usize] as i32)
     };
     setlen(output.len() as i32);
+
+    for i in 0..extra.len() {
+        wextra(i as i32, extra[i as usize] as i32)
+    };
 
     0
 
