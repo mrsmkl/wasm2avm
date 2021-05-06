@@ -29,12 +29,14 @@ extern "C" {
     fn wextra(idx: i32, c: i32);
 }
 
+/*
 fn push_int(output: &mut Vec<u8>, a: &Uint256) {
     let bytes = a.to_bytes_be();
     for i in 0..8 {
         output.push(bytes[i+24])
     }
 }
+*/
 
 fn push_bytes32(output: &mut Vec<u8>, a: &Uint256) {
     let bytes = a.to_bytes_be();
@@ -120,7 +122,7 @@ pub fn process(input: &[u8]) -> (Vec<u8>, Vec<u8>) {
             None => extra.push(0),
             Some (Value::Int(a)) => {
                 extra.push(1);
-                push_int(&mut extra, a);
+                push_bytes32(&mut extra, a);
             },
             Some (Value::Tuple(tup)) => {
                 if tup.len() == 5 {
@@ -129,7 +131,7 @@ pub fn process(input: &[u8]) -> (Vec<u8>, Vec<u8>) {
                     match &tup[1] {
                         Value::Int(a) => {
                             extra.push(3);
-                            push_int(&mut extra, &a);
+                            push_bytes32(&mut extra, &a);
                         },
                         _ => panic!("bad immed")
                     }
@@ -165,6 +167,10 @@ pub fn test() -> u32 {
     usegas(input_len / 10 + 1);
 
     let (output, extra) = process(&input);
+    /*
+    let output = input.clone();
+    let extra = input.clone();
+    */
 
     for i in 0..output.len() {
         write_buffer(i as i32, output[i as usize] as i32)
