@@ -1937,7 +1937,7 @@ pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
     init.push(simple_op(AVMOpcode::Pop));
     init.push(simple_op(AVMOpcode::AuxPop));
     init.push(simple_op(AVMOpcode::Rset));
-    init.push(simple_op(AVMOpcode::Noop));
+    init.push(simple_op(AVMOpcode::Halt));
 
     init
 }
