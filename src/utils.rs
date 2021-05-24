@@ -29,11 +29,13 @@ fn block_len(bt: &BlockType) -> usize {
     }
 }
 
+/*
 fn count_locals(func: &FuncBody) -> usize {
     func.locals()
         .iter()
         .fold(0, |sum, x| sum + x.count() as usize)
 }
+*/
 
 fn get_func_type(m: &Module, sig: u32) -> &FunctionType {
     match m.type_section().unwrap().types()[sig as usize] {
@@ -281,7 +283,8 @@ fn generate_store(res: &mut Vec<Instruction>, offset: u32, memory_offset: usize,
         AVMOpcode::Mul,
         Value::Int(Uint256::from_usize(1 << 16)),
     ));
-    res.push(simple_op(AVMOpcode::LessThan));
+    res.push(simple_op(AVMOpcode::GreaterThan));
+    res.push(simple_op(AVMOpcode::IsZero));
     cjump(res, 1);
 
     let offset = memory_offset + (offset as usize);
@@ -308,7 +311,8 @@ fn generate_load(res: &mut Vec<Instruction>, offset: u32, memory_offset: usize, 
         AVMOpcode::Mul,
         Value::Int(Uint256::from_usize(1 << 16)),
     ));
-    res.push(simple_op(AVMOpcode::LessThan));
+    res.push(simple_op(AVMOpcode::GreaterThan));
+    res.push(simple_op(AVMOpcode::IsZero));
     cjump(res, 1);
 
     let offset = memory_offset + (offset as usize);
@@ -379,6 +383,11 @@ fn op32(res: &mut Vec<Instruction>, op: AVMOpcode) {
     op32_swap(res, op);
 }
 
+fn signed_op32(res: &mut Vec<Instruction>, op: AVMOpcode) {
+    res.push(simple_op(AVMOpcode::Swap1));
+    signed_op32_swap(res, op);
+}
+
 fn op64(res: &mut Vec<Instruction>, op: AVMOpcode) {
     res.push(simple_op(AVMOpcode::Swap1));
     op64_swap(res, op);
@@ -399,6 +408,11 @@ fn signed_op64_swap(res: &mut Vec<Instruction>, op: AVMOpcode) {
         AVMOpcode::BitwiseAnd,
         Value::Int(Uint256::from_u64(0xffffffffffffffff)),
     ));
+}
+
+fn signed_op64(res: &mut Vec<Instruction>, op: AVMOpcode) {
+    res.push(simple_op(AVMOpcode::Swap1));
+    signed_op64_swap(res, op);
 }
 
 fn op64_swap(res: &mut Vec<Instruction>, op: AVMOpcode) {
@@ -516,7 +530,7 @@ fn make_popcnt(res: &mut Vec<Instruction>) {
     ));
     res.push(immed_op(
         AVMOpcode::BitwiseAnd,
-        Value::Int(Uint256::from_u64(0xff)),
+        Value::Int(Uint256::from_usize(0xff)),
     ));
 }
 
@@ -582,6 +596,38 @@ fn make_ctz(res: &mut Vec<Instruction>, num: usize) {
     res.push(simple_op(AVMOpcode::Pop)); // count, value
     res.push(simple_op(AVMOpcode::Swap1)); // value, count
     res.push(simple_op(AVMOpcode::Pop)); // count
+}
+
+fn trap_zero_division(res: &mut Vec<Instruction>) {
+    res.push(simple_op(AVMOpcode::Dup0));
+    res.push(simple_op(AVMOpcode::IsZero));
+    cjump(res, 1);
+}
+
+fn trap_zero_division_s32(res: &mut Vec<Instruction>) {
+    res.push(simple_op(AVMOpcode::Dup0));
+    res.push(immed_op(
+        AVMOpcode::ShiftLeft,
+        Value::Int(Uint256::from_usize(32)),
+    ));
+    res.push(simple_op(AVMOpcode::Dup2));
+    res.push(simple_op(AVMOpcode::BitwiseOr));
+    res.push(push_value(Value::Int(Uint256::from_string_hex("ffffffff80000000").unwrap())));
+    res.push(simple_op(AVMOpcode::Equal));
+    cjump(res, 1);
+}
+
+fn trap_zero_division_s64(res: &mut Vec<Instruction>) {
+    res.push(simple_op(AVMOpcode::Dup0));
+    res.push(immed_op(
+        AVMOpcode::ShiftLeft,
+        Value::Int(Uint256::from_usize(64)),
+    ));
+    res.push(simple_op(AVMOpcode::Dup2));
+    res.push(simple_op(AVMOpcode::BitwiseOr));
+    res.push(push_value(Value::Int(Uint256::from_string_hex("ffffffffffffffff8000000000000000").unwrap())));
+    res.push(simple_op(AVMOpcode::Equal));
+    cjump(res, 1);
 }
 
 fn is_func(e: &External) -> bool {
@@ -776,7 +822,7 @@ fn handle_function(
     stack.push(def.clone());
 
     /*
-    eprintln!(
+    println!(
         "Got function with {:?} ops, {:?} locals, {} params, {} rets",
         func.code().elements().len(),
         count_locals(func),
@@ -784,9 +830,11 @@ fn handle_function(
         rets
     );*/
 
+    let mut unreachable = false;
+
     for (idx_inf, op) in func.code().elements().iter().enumerate() {
         /*
-        eprintln!(
+        println!(
             "handling ptr {} frames {}; {:?} ... label {} len {}",
             ptr,
             stack.len(),
@@ -797,15 +845,53 @@ fn handle_function(
         */
         let cur_len = res.len();
         res.push(debug_op(format!("{:?} level {} func {} idx {}", *op, ptr, idx, idx_inf)));
+        if unreachable {
+            if *op == End {
+                if stack.len() == 0 {
+                    break;
+                }
+                let c: Control = stack.pop().unwrap();
+                bptr = bptr - 1;
+                if c.is_ite {
+                    if c.else_label != 0 {
+                        res.push(mk_label(c.else_label));
+                    }
+                }
+                if !c.is_loop {
+                    res.push(mk_label(c.target));
+                }
+                if c.level != ptr {
+                    // println!("End block mismatch {} != {} rets {}", ptr, c.level, c.rets);
+                    // panic!("End block mismatch");
+                }
+                ptr = c.level;
+                unreachable = false;
+                continue;
+            } else if *op == Else {
+                let mut c: Control = stack.pop().unwrap();
+                ptr = c.level - c.rets;
+                jump(&mut res, c.target);
+                res.push(mk_label(c.else_label));
+                c.else_label = 0;
+                stack.push(c);
+                unreachable = false;
+                continue
+            } else {
+                continue
+            }
+        }
+
         match &*op {
             Nop => res.push(simple_op(AVMOpcode::Noop)),
             Unreachable => {
-                res.push(simple_op(AVMOpcode::Panic));
+                // res.push(simple_op(AVMOpcode::Panic));
+                jump(&mut res, 1);
                 if stack.len() == 0 {
                     break;
                 }
                 let c: &Control = &stack[stack.len()-1];
                 ptr = c.level;
+                unreachable = true;
             },
             Block(bt) => {
                 let end_label = label;
@@ -871,8 +957,8 @@ fn handle_function(
                     res.push(mk_label(c.target));
                 }
                 if c.level != ptr {
-                    eprintln!("End block mismatch {} != {} rets {}", ptr, c.level, c.rets);
-                    panic!("End block mismatch");
+                    // eprintln!("End block mismatch {} != {} rets {}", ptr, c.level, c.rets);
+                    // panic!("End block mismatch");
                 }
                 ptr = c.level;
             }
@@ -896,22 +982,33 @@ fn handle_function(
             }
             Br(x) => {
                 let c = &stack[stack.len() - (*x as usize) - 1];
-                // eprintln!("Debug br {:?} {}", c, c.level);
-                adjust_stack(&mut res, ptr - c.level, c.rets);
-                ptr = ptr - c.rets;
+                // println!("Debug br {:?} {}", c, c.level);
+                if !c.is_loop {
+                    adjust_stack(&mut res, ptr - c.level, c.rets);
+                } else {
+                    adjust_stack(&mut res, ptr - (c.level - c.rets), 0);
+                }
+                // adjust_stack(&mut res, ptr - c.level, c.rets);
+                // ptr = ptr - c.rets;
+                unreachable = true;
                 jump(&mut res, c.target);
             }
             BrIf(x) => {
                 let c = &stack[stack.len() - (*x as usize) - 1];
                 res.push(debug_op(format!("Debug brif {:?} ptr {} next level: {} + {}", c, ptr, c.level, c.rets)));
-                // eprintln!("Debug brif {:?} ptr {} next level: {} + {}", c, ptr, c.level, c.rets);
+                // println!("Debug brif {:?} ptr {} next level: {} + {}", c, ptr, c.level, c.rets);
                 let continue_label = label;
                 let end_label = label + 1;
                 label = label + 2;
                 cjump(&mut res, continue_label);
                 jump(&mut res, end_label);
                 res.push(mk_label(continue_label));
-                adjust_stack(&mut res, ptr - c.level - 1, c.rets);
+                if !c.is_loop {
+                    adjust_stack(&mut res, ptr - c.level - 1, c.rets);
+                } else {
+                    adjust_stack(&mut res, ptr - (c.level - c.rets) - 1, 0);
+                }
+                // adjust_stack(&mut res, ptr - c.level - 1, c.rets);
                 jump(&mut res, c.target);
                 res.push(mk_label(end_label));
                 ptr = ptr - 1;
@@ -944,11 +1041,10 @@ fn handle_function(
                 res.push(set_frame());
             }
             I32Const(x) => {
-                res.push(push_value(Value::Int(Uint256::from_u64(*x as u64))));
+                res.push(push_value(Value::Int(Uint256::from_u64((*x as u64) & 0xffffffff))));
                 ptr = ptr + 1;
             }
             I64Const(x) => {
-                // println!("const {}", x);
                 res.push(push_value(Value::Int(Uint256::from_u64(*x as u64))));
                 ptr = ptr + 1;
             }
@@ -1030,6 +1126,7 @@ fn handle_function(
                 adjust_stack(&mut res, ptr - c.level, c.rets);
                 ptr = ptr - c.rets;
                 jump(&mut res, c.target);
+                unreachable = true;
             }
             Select => {
                 let else_label = label;
@@ -1048,6 +1145,7 @@ fn handle_function(
                 let len = tab.len();
                 for (i, num) in tab.iter().enumerate() {
                     let c = &stack[stack.len() - (*num as usize) - 1];
+                    // println!("Frame {:?}", c);
                     res.push(simple_op(AVMOpcode::Dup0));
                     res.push(immed_op(
                         AVMOpcode::Equal,
@@ -1056,16 +1154,27 @@ fn handle_function(
                     res.push(simple_op(AVMOpcode::IsZero));
                     cjump(&mut res, label + i);
                     res.push(simple_op(AVMOpcode::Pop));
-                    adjust_stack(&mut res, ptr - c.level - 1, c.rets);
+                    if !c.is_loop {
+                        adjust_stack(&mut res, ptr - c.level - 1, c.rets);
+                    } else {
+                        adjust_stack(&mut res, ptr - (c.level - c.rets) - 1, 0);
+                    }
                     jump(&mut res, c.target);
                     res.push(mk_label(label + i));
                 }
                 let c = &stack[stack.len() - (def as usize) - 1];
                 res.push(simple_op(AVMOpcode::Pop));
-                adjust_stack(&mut res, ptr - c.level - 1, c.rets);
+                if !c.is_loop {
+                    adjust_stack(&mut res, ptr - c.level - 1, c.rets);
+                } else {
+                    adjust_stack(&mut res, ptr - (c.level - c.rets) - 1, 0);
+                }
+                // adjust_stack(&mut res, ptr - c.level - 1, c.rets);
                 jump(&mut res, c.target);
 
-                ptr = ptr - 1 - c.rets;
+                unreachable = true;
+                // ptr = ptr - 1 - c.rets;
+                ptr = 0;
                 label = label + len + 2;
             }
 
@@ -1106,7 +1215,15 @@ fn handle_function(
                 generate_load(&mut res, *offset, memory_offset, 8);
             }
 
-            I32Load(_, offset) | I64Load32U(_, offset) => {
+            I32Load(_, offset) => {
+                generate_load(&mut res, *offset, memory_offset, 4);
+                res.push(immed_op(
+                    AVMOpcode::BitwiseAnd,
+                    Value::Int(Uint256::from_usize(0xffffffff)),
+                ));
+            }
+
+            I64Load32U(_, offset) => {
                 generate_load(&mut res, *offset, memory_offset, 4);
             }
 
@@ -1127,12 +1244,16 @@ fn handle_function(
                 ));
                 res.push(immed_op(
                     AVMOpcode::Mul,
-                    Value::Int(Uint256::from_u64(0xfffffff00000000)),
+                    Value::Int(Uint256::from_u64(0xffffffff00000000)),
                 ));
                 res.push(simple_op(AVMOpcode::BitwiseOr));
+                res.push(immed_op(
+                    AVMOpcode::BitwiseAnd,
+                    Value::Int(Uint256::from_u64(0xffffffffffffffff)),
+                ));
             }
 
-            I64Load16S(_, offset) | I32Load16S(_, offset) => {
+            I64Load16S(_, offset) => {
                 generate_load(&mut res, *offset, memory_offset, 2);
                 res.push(simple_op(AVMOpcode::Dup0));
                 res.push(immed_op(
@@ -1141,12 +1262,52 @@ fn handle_function(
                 ));
                 res.push(immed_op(
                     AVMOpcode::Mul,
-                    Value::Int(Uint256::from_u64(0xfffffffffff0000)),
+                    Value::Int(Uint256::from_u64(0xffffffffffff0000)),
                 ));
                 res.push(simple_op(AVMOpcode::BitwiseOr));
+                res.push(immed_op(
+                    AVMOpcode::BitwiseAnd,
+                    Value::Int(Uint256::from_u64(0xffffffffffffffff)),
+                ));
             }
 
-            I64Load8S(_, offset) | I32Load8S(_, offset) => {
+            I32Load16S(_, offset) => {
+                generate_load(&mut res, *offset, memory_offset, 2);
+                res.push(simple_op(AVMOpcode::Dup0));
+                res.push(immed_op(
+                    AVMOpcode::ShiftRight,
+                    Value::Int(Uint256::from_usize(15)),
+                ));
+                res.push(immed_op(
+                    AVMOpcode::Mul,
+                    Value::Int(Uint256::from_u64(0xffffffffffff0000)),
+                ));
+                res.push(simple_op(AVMOpcode::BitwiseOr));
+                res.push(immed_op(
+                    AVMOpcode::BitwiseAnd,
+                    Value::Int(Uint256::from_usize(0xffffffff)),
+                ));
+            }
+
+            I64Load8S(_, offset) => {
+                generate_load(&mut res, *offset, memory_offset, 1);
+                res.push(simple_op(AVMOpcode::Dup0));
+                res.push(immed_op(
+                    AVMOpcode::ShiftRight,
+                    Value::Int(Uint256::from_usize(7)),
+                ));
+                res.push(immed_op(
+                    AVMOpcode::Mul,
+                    Value::Int(Uint256::from_u64(0xffffffffffffff00)),
+                ));
+                res.push(simple_op(AVMOpcode::BitwiseOr));
+                res.push(immed_op(
+                    AVMOpcode::BitwiseAnd,
+                    Value::Int(Uint256::from_u64(0xffffffffffffffff)),
+                ));
+            }
+
+            I32Load8S(_, offset) => {
                 generate_load(&mut res, *offset, memory_offset, 1);
                 res.push(simple_op(AVMOpcode::Dup0));
                 res.push(immed_op(
@@ -1158,6 +1319,10 @@ fn handle_function(
                     Value::Int(Uint256::from_u64(0xfffffffffffff00)),
                 ));
                 res.push(simple_op(AVMOpcode::BitwiseOr));
+                res.push(immed_op(
+                    AVMOpcode::BitwiseAnd,
+                    Value::Int(Uint256::from_usize(0xffffffff)),
+                ));
             }
 
             I32Add => {
@@ -1222,18 +1387,23 @@ fn handle_function(
                 ptr = ptr - 1;
             }
             I32DivU => {
+                trap_zero_division(&mut res);
                 op32_swap(&mut res, AVMOpcode::Div);
                 ptr = ptr - 1;
             }
             I32DivS => {
+                trap_zero_division(&mut res);
+                trap_zero_division_s32(&mut res);
                 signed_op32_swap(&mut res, AVMOpcode::Sdiv);
                 ptr = ptr - 1;
             }
             I32RemU => {
+                trap_zero_division(&mut res);
                 op32_swap(&mut res, AVMOpcode::Mod);
                 ptr = ptr - 1;
             }
             I32RemS => {
+                trap_zero_division(&mut res);
                 signed_op32_swap(&mut res, AVMOpcode::Smod);
                 ptr = ptr - 1;
             }
@@ -1250,19 +1420,41 @@ fn handle_function(
                 ptr = ptr - 1;
             }
             I32Shl => {
+                res.push(immed_op(
+                    AVMOpcode::BitwiseAnd,
+                    Value::Int(Uint256::from_usize(0x1f)),
+                ));
                 op32(&mut res, AVMOpcode::ShiftLeft);
                 ptr = ptr - 1;
             }
             I32ShrU => {
+                res.push(immed_op(
+                    AVMOpcode::BitwiseAnd,
+                    Value::Int(Uint256::from_usize(0x1f)),
+                ));
                 op32(&mut res, AVMOpcode::ShiftRight);
                 ptr = ptr - 1;
             }
             I32ShrS => {
-                op32(&mut res, AVMOpcode::ShiftArith);
+                res.push(immed_op(
+                    AVMOpcode::BitwiseAnd,
+                    Value::Int(Uint256::from_usize(0x1f)),
+                ));
+                signed_op32(&mut res, AVMOpcode::ShiftArith);
                 ptr = ptr - 1;
             }
 
             I32Rotl => {
+                res.push(immed_op(
+                    AVMOpcode::BitwiseAnd,
+                    Value::Int(Uint256::from_usize(0x1f)),
+                ));
+                res.push(simple_op(AVMOpcode::Swap1));
+                res.push(immed_op(
+                    AVMOpcode::BitwiseAnd,
+                    Value::Int(Uint256::from_usize(0xffffffff)),
+                ));
+                res.push(simple_op(AVMOpcode::Swap1));
                 make_rotl(&mut res, 32);
                 res.push(immed_op(
                     AVMOpcode::BitwiseAnd,
@@ -1271,6 +1463,16 @@ fn handle_function(
                 ptr = ptr - 1;
             }
             I32Rotr => {
+                res.push(immed_op(
+                    AVMOpcode::BitwiseAnd,
+                    Value::Int(Uint256::from_usize(0x1f)),
+                ));
+                res.push(simple_op(AVMOpcode::Swap1));
+                res.push(immed_op(
+                    AVMOpcode::BitwiseAnd,
+                    Value::Int(Uint256::from_usize(0xffffffff)),
+                ));
+                res.push(simple_op(AVMOpcode::Swap1));
                 make_rotr(&mut res, 32);
                 res.push(immed_op(
                     AVMOpcode::BitwiseAnd,
@@ -1363,18 +1565,23 @@ fn handle_function(
                 ptr = ptr - 1;
             }
             I64DivU => {
+                trap_zero_division(&mut res);
                 op64_swap(&mut res, AVMOpcode::Div);
                 ptr = ptr - 1;
             }
             I64DivS => {
+                trap_zero_division(&mut res);
+                trap_zero_division_s64(&mut res);
                 signed_op64_swap(&mut res, AVMOpcode::Sdiv);
                 ptr = ptr - 1;
             }
             I64RemU => {
+                trap_zero_division(&mut res);
                 op64_swap(&mut res, AVMOpcode::Mod);
                 ptr = ptr - 1;
             }
             I64RemS => {
+                trap_zero_division(&mut res);
                 signed_op64_swap(&mut res, AVMOpcode::Smod);
                 ptr = ptr - 1;
             }
@@ -1391,19 +1598,35 @@ fn handle_function(
                 ptr = ptr - 1;
             }
             I64Shl => {
+                res.push(immed_op(
+                    AVMOpcode::BitwiseAnd,
+                    Value::Int(Uint256::from_usize(0x3f)),
+                ));
                 op64(&mut res, AVMOpcode::ShiftLeft);
                 ptr = ptr - 1;
             }
             I64ShrU => {
+                res.push(immed_op(
+                    AVMOpcode::BitwiseAnd,
+                    Value::Int(Uint256::from_usize(0x3f)),
+                ));
                 op64(&mut res, AVMOpcode::ShiftRight);
                 ptr = ptr - 1;
             }
             I64ShrS => {
-                op64(&mut res, AVMOpcode::ShiftArith);
+                res.push(immed_op(
+                    AVMOpcode::BitwiseAnd,
+                    Value::Int(Uint256::from_usize(0x3f)),
+                ));
+                signed_op64(&mut res, AVMOpcode::ShiftArith);
                 ptr = ptr - 1;
             }
 
             I64Rotl => {
+                res.push(immed_op(
+                    AVMOpcode::BitwiseAnd,
+                    Value::Int(Uint256::from_usize(0x3f)),
+                ));
                 make_rotl(&mut res, 64);
                 res.push(immed_op(
                     AVMOpcode::BitwiseAnd,
@@ -1412,6 +1635,10 @@ fn handle_function(
                 ptr = ptr - 1;
             }
             I64Rotr => {
+                res.push(immed_op(
+                    AVMOpcode::BitwiseAnd,
+                    Value::Int(Uint256::from_usize(0x3f)),
+                ));
                 make_rotr(&mut res, 64);
                 res.push(immed_op(
                     AVMOpcode::BitwiseAnd,
@@ -1454,7 +1681,7 @@ fn handle_function(
             I64ExtendSI32 => {
                 res.push(immed_op(
                     AVMOpcode::SignExtend,
-                    Value::Int(Uint256::from_usize(7)),
+                    Value::Int(Uint256::from_usize(3)),
                 ));
                 res.push(immed_op(
                     AVMOpcode::BitwiseAnd,
@@ -1479,12 +1706,13 @@ fn handle_function(
                 res.push(simple_op(AVMOpcode::Dup0));
                 res.push(immed_op(
                     AVMOpcode::GreaterThan,
-                    Value::Int(Uint256::from_usize(max_memory)),
+                    Value::Int(Uint256::from_usize(max_memory+1)),
                 ));
                 cjump(&mut res, ok_label);
                 res.push(simple_op(AVMOpcode::Pop));
                 res.push(simple_op(AVMOpcode::Pop));
                 res.push(push_value(Value::Int(Uint256::from_usize(0xffffffff)))); // -1 when error
+                jump(&mut res, end_label);
                 res.push(mk_label(ok_label));
                 get_memory(&mut res);
                 res.push(simple_op(AVMOpcode::Swap1));
@@ -1625,20 +1853,6 @@ pub fn has_label(inst: &Instruction) -> bool {
     }
 }
 
-pub fn has_immed(inst: &Instruction) -> bool {
-    match inst.immediate {
-        Some(_) => true,
-        None => false,
-    }
-}
-
-pub fn get_immed(inst: &Instruction) -> u64 {
-    match &inst.immediate {
-        Some(Value::Int(a)) => a.trim_to_u64(),
-        _ => 0,
-    }
-}
-
 pub fn get_inst(inst: &Instruction) -> u8 {
     match inst.opcode {
         Opcode::AVMOpcode(op) => op as u8,
@@ -1682,7 +1896,7 @@ pub fn resolve_labels(arr: Vec<Instruction>) -> (Vec<Instruction>, Value) {
 fn init_value(_m: &Module, expr: &InitExpr) -> u64 {
     // eprintln!("init {:?}", expr);
     match expr.code()[0] {
-        I32Const(a) => a as u64,
+        I32Const(a) => (a as u64) & 0xffffffff,
         F32Const(a) => a as u64,
         I64Const(a) => a as u64,
         F64Const(a) => a as u64,
@@ -1694,8 +1908,8 @@ fn int_from_usize(a: usize) -> Value {
     Value::Int(Uint256::from_usize(a))
 }
 
-fn int_from_u64(a: u64) -> Value {
-    Value::Int(Uint256::from_u64(a))
+fn int_from_u32(a: u32) -> Value {
+    Value::Int(Uint256::from_u64(a as u64))
 }
 
 fn find_function(m: &Module, name: &str) -> Option<u32> {
@@ -1715,6 +1929,233 @@ fn find_function(m: &Module, name: &str) -> Option<u32> {
     }
 }
 
+fn find_memory_size(m: &Module) -> u32 {
+    match m.memory_section() {
+        None => 0,
+        Some(sec) => {
+            for e in sec.entries() {
+                return e.limits().initial();
+            }
+            0
+        }
+    }
+}
+
+fn find_memory_max(m: &Module) -> u32 {
+    match m.memory_section() {
+        None => 0,
+        Some(sec) => {
+            for e in sec.entries() {
+                match e.limits().maximum() {
+                    None => return 0x10000,
+                    Some(max) => return max,
+                }
+            }
+            0
+        }
+    }
+}
+
+/*
+pub fn get_answer(answer: wasmtime::TypedFunc<(), (i32)>) -> i32 {
+    match answer.call(()) {
+        Ok(result) => result as i32,
+        Err(_) => 0,
+    }
+}
+
+pub struct JitWasm {
+    instance: wasmtime::Instance,
+    cell: std::rc::Rc<std::cell::RefCell<Buffer>>,
+    len_cell: std::rc::Rc<std::cell::RefCell<i32>>,
+    gas_cell: std::rc::Rc<std::cell::RefCell<i32>>,
+    extra_cell: std::rc::Rc<std::cell::RefCell<Vec<u8>>>,
+}
+
+use std::fmt;
+
+impl fmt::Debug for JitWasm {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "JitWasm")
+    }
+}
+
+impl JitWasm {
+    pub fn new(buffer: &[u8]) -> Self {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        use wasmtime::*;
+        let engine = Engine::default();
+        let store = Store::new(&engine);
+
+        let module = Module::from_binary(&engine, &buffer).unwrap();
+
+        let buf = Buffer::from_bytes(vec![]);
+
+        let memory_cell : Rc<RefCell<std::option::Option<Memory>>> = Rc::new(RefCell::new(None));
+        let memory_cell2 = memory_cell.clone();
+        let memory_cell3 = memory_cell.clone();
+
+        let extra_cell : Rc<RefCell<Vec<u8>>> = Rc::new(RefCell::new(vec![]));
+        let extra_cell1 = extra_cell.clone();
+
+        let cell = Rc::new(RefCell::new(buf));
+        let cell1 = cell.clone();
+        let cell2 = cell.clone();
+        let cell3 = cell.clone();
+        let cell4 = cell.clone();
+
+        let len_cell = Rc::new(RefCell::new(4));
+        let len1 = len_cell.clone();
+        let len2 = len_cell.clone();
+
+        let gas_cell = Rc::new(RefCell::new(4));
+        let gas1 = gas_cell.clone();
+
+        let read_func = Func::wrap(&store, move |offset: i32| {
+            let ret = cell1.borrow().read_byte(offset as u128) as i32;
+            ret
+        });
+
+        let write_func = Func::wrap(&store, move |offset: i32, v: i32| {
+            // println!("write buffer {} {}", offset, v);
+            cell2.replace_with(|buf| buf.set_byte(offset as u128, v as u8));
+        });
+
+        let extra_write_func = Func::wrap(&store, move |offset: i32, v: i32| {
+            // println!("write buffer {} {}", offset, v);
+            let mut vec = extra_cell1.borrow_mut();
+            let offset = offset as usize;
+            if vec.len() <= offset {
+                vec.resize(offset+1, 0)
+            }
+            vec[offset as usize] = v as u8;
+            // replace_with(|buf| buf.set_byte(offset as u128, v as u8));
+        });
+
+        let rvec_func = Func::wrap(&store, move |ptr: i32, offset: i32, len: i32| {
+            let buf = cell3.borrow();
+            match &*memory_cell2.borrow() {
+                None => println!("warning, no memory"),
+                Some(memory) => {
+                    let mut tmp = vec![];
+                    for i in offset..offset+len {
+                        tmp.push(buf.read_byte(i as u128));
+                    }
+                    println!("{:?}", tmp);
+                    memory.write(ptr as usize, &tmp).expect("cannot write memory");
+                }
+            }
+        });
+
+        let wvec_func = Func::wrap(&store, move |ptr: i32, offset: i32, len: i32| {
+            match &*memory_cell3.borrow() {
+                None => println!("warning, no memory"),
+                Some(memory) => {
+                    let mut tmp = vec![0; len as usize];
+                    memory.read(ptr as usize, &mut tmp).expect("cannot read memory");
+                    println!("{:?}", tmp);
+
+                    cell4.replace_with(|buf| {
+                        let mut res = buf.clone();
+                        for i in 0..len {
+                            res = res.set_byte((offset+i) as u128, tmp[i as usize]);
+                        }
+                        res
+                    });
+
+                }
+            }
+        });
+
+        let len_func = Func::wrap(&store, move || len1.borrow().clone() as i32);
+
+        let set_len_func = Func::wrap(&store, move |nlen: i32| { len2.replace_with(|_| nlen); });
+
+        let callback_type = FuncType::new(
+            [ValType::I32].iter().cloned(),
+            [].iter().cloned(),
+        );
+        let gas_func = Func::new(&store, callback_type, move |_, args, _results| {
+            let gas_used = args[0].unwrap_i32();
+            let gas = gas1.borrow().clone();
+            if gas_used > gas {
+                gas1.replace_with(|_gas| 0);
+                Err(wasmtime::Trap::new("out of gas"))
+            } else {
+                gas1.replace_with(|gas| *gas - gas_used);
+                Ok(())
+            }
+        });
+    
+        let error_func = Func::wrap(&store, || {
+            panic!("Unknown import");
+        });
+
+        let mut imports = vec![];
+
+        for f in module.imports() {
+            match (f.ty(), f.name()) {
+                (ExternType::Func(_), Some(name)) => {
+                    if name.contains("read") {
+                        imports.push(read_func.clone().into())
+                    } else if name.contains("write") {
+                        imports.push(write_func.clone().into())
+                    } else if name.contains("getlen") {
+                        imports.push(len_func.clone().into())
+                    } else if name.contains("setlen") {
+                        imports.push(set_len_func.clone().into())
+                    } else if name.contains("usegas") {
+                        imports.push(gas_func.clone().into())
+                    } else if name.contains("rvec") {
+                        imports.push(rvec_func.clone().into())
+                    } else if name.contains("wvec") {
+                        imports.push(wvec_func.clone().into())
+                    } else if name.contains("wextra") {
+                        imports.push(extra_write_func.clone().into())
+                    } else {
+                        imports.push(error_func.clone().into())
+                    }
+                }
+                (ExternType::Func(_), None) => imports.push(error_func.clone().into()),
+                _ => {}
+            }
+        }
+
+        let instance = Instance::new(&store, &module, &imports).unwrap();
+
+        let memory = instance.get_memory("memory");
+        memory_cell.replace_with(|_prev| memory);
+
+        return JitWasm {
+            instance,
+            cell,
+            len_cell,
+            gas_cell,
+            extra_cell,
+        };
+    }
+
+    pub fn run(&self, buf: Buffer, len: usize) -> (Buffer, Vec<u8>, usize, u64) {
+        self.cell.replace_with(|_buf| buf);
+        self.len_cell.replace_with(|_len| len as i32);
+        self.gas_cell.replace_with(|_gas| 1000000);
+
+        let _res = match self.instance.get_typed_func::<(),(i32)>("test") {
+            Ok(f) => get_answer(f) as i64,
+            Err(_) => 0,
+        };
+
+        (
+            self.cell.borrow().clone(),
+            self.extra_cell.borrow().clone(),
+            self.len_cell.borrow().clone() as usize,
+            self.gas_cell.borrow().clone() as u64,
+        )
+    }
+}
+*/
+
 fn get_func_imports(m: &Module) -> Vec<&ImportEntry> {
     match m.import_section() {
         None => Vec::new(),
@@ -1729,22 +2170,6 @@ fn get_func_imports(m: &Module) -> Vec<&ImportEntry> {
 
 pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
     let mut init = vec![];
-    let module = parity_wasm::deserialize_buffer::<Module>(buffer).unwrap();
-    assert!(module.code_section().is_some());
-
-    let imports = get_func_imports(&module);
-
-    let code_section = module.code_section().unwrap(); // Part of the module with functions code
-
-    /*
-    println!(
-        "Function count in wasm file: {}, {} imports",
-        code_section.bodies().len(),
-        imports.len()
-    );
-    */
-    let f_count = code_section.bodies().len() + imports.len();
-    let max_memory = 1 << 20;
 
     // These might become replaced
     init.push(simple_op(AVMOpcode::Noop));
@@ -1756,54 +2181,138 @@ pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
     init.push(simple_op(AVMOpcode::AuxPush));
 
     // Initialize register
-    // init.push(immed_op(AVMOpcode::Rset, Value::new_tuple(vec![Value::new_buffer(vec![]), int_from_usize(0)])));
     init.push(push_value(Value::new_tuple(vec![
         Value::new_buffer(vec![]), // memory
-        int_from_usize(0), // jump table
+        int_from_usize(0), // call table
         Value::new_buffer(vec![]), // IO buffer
         int_from_usize(0), // IO len
-        int_from_usize(100000), // gas left
+        int_from_usize(1000000), // gas left
     ])));
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(1)));
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(2)));
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(3)));
     init.push(simple_op(AVMOpcode::Rset));
 
-    // Construct initial memory with globals
-    init.push(simple_op(AVMOpcode::NewBuffer));
-    init.push(push_value(int_from_usize(1024)));
-    init.push(set64_from_buffer(0));
-    let mut globals = 1;
-    if let Some(sec) = module.global_section() {
-        for g in sec.entries().iter() {
-            init.push(push_value(Value::Int(Uint256::from_u64(init_value(
-                &module,
-                g.init_expr(),
-            )))));
-            init.push(set64_from_buffer(globals));
-            globals = globals + 1;
-        }
-    }
+    process_wasm_inner(buffer, &mut init, &vec![2], &"test".to_string(), true);
 
-    // Add initial memory segments
-    let memory_offset = globals * 8;
-    if let Some(sec) = module.data_section() {
-        for seg in sec.entries().iter() {
-            let offset = match seg.offset() {
-                Some(a) => init_value(&module, a) as usize,
-                None => 0,
-            };
-            for (i, bt) in seg.value().iter().enumerate() {
-                init.push(push_value(int_from_usize(*bt as usize)));
-                init.push(immed_op(
-                    AVMOpcode::SetBuffer8,
-                    int_from_usize(memory_offset + offset + i),
-                ));
+    init.push(simple_op(AVMOpcode::Rget));
+    init.push(immed_op(AVMOpcode::Tget, int_from_usize(4)));
+    init.push(simple_op(AVMOpcode::Rget));
+    init.push(immed_op(AVMOpcode::Tget, int_from_usize(2)));
+    init.push(simple_op(AVMOpcode::Rget));
+    init.push(immed_op(AVMOpcode::Tget, int_from_usize(3)));
+    init.push(simple_op(AVMOpcode::AuxPop));
+    init.push(simple_op(AVMOpcode::Pop));
+    init.push(simple_op(AVMOpcode::AuxPop));
+    init.push(simple_op(AVMOpcode::Rset));
+    init.push(simple_op(AVMOpcode::Noop));
+
+    init
+
+}
+
+fn process_test(buffer: &[u8], test_args: &[u64], entry: &String, set_memory: bool) -> Vec<Instruction> {
+    let mut init = vec![];
+
+    // These might become replaced
+    init.push(simple_op(AVMOpcode::Noop));
+    init.push(simple_op(AVMOpcode::Noop));
+    init.push(simple_op(AVMOpcode::Noop));
+
+    // Save register
+    init.push(simple_op(AVMOpcode::Rget));
+    init.push(simple_op(AVMOpcode::AuxPush));
+
+    // Initialize register
+    init.push(push_value(Value::new_tuple(vec![
+        Value::new_buffer(vec![]), // memory
+        int_from_usize(0), // call table
+        Value::new_buffer(vec![]), // IO buffer
+        int_from_usize(0), // IO len
+        int_from_usize(100000), // gas left
+    ])));
+    init.push(immed_op(AVMOpcode::Tset, int_from_usize(0)));
+    init.push(immed_op(AVMOpcode::Tset, int_from_usize(1)));
+    init.push(simple_op(AVMOpcode::Rset));
+
+    process_wasm_inner(buffer, &mut init, test_args, entry, set_memory);
+
+    // return value is in expression stack?
+
+    init.push(simple_op(AVMOpcode::Rget));
+    init.push(immed_op(AVMOpcode::Tget, int_from_usize(0)));
+    // Pop frame?
+    init.push(simple_op(AVMOpcode::AuxPop));
+    init.push(simple_op(AVMOpcode::Pop));
+    init.push(simple_op(AVMOpcode::AuxPop));
+    init.push(simple_op(AVMOpcode::Rset));
+    init.push(simple_op(AVMOpcode::Noop));
+
+    init
+
+}
+
+fn process_wasm_inner(buffer: &[u8], init: &mut Vec<Instruction>, test_args: &[u64], entry: &String, init_memory: bool) {
+    let module = parity_wasm::deserialize_buffer::<Module>(buffer).unwrap();
+    assert!(module.code_section().is_some());
+
+    let imports = get_func_imports(&module);
+
+    let code_section = module.code_section().unwrap(); // Part of the module with functions code
+
+    let f_count = code_section.bodies().len() + imports.len();
+    let max_memory = find_memory_max(&module) as usize;
+
+    // Construct initial memory with globals
+    let memory_offset = if init_memory {
+        init.push(simple_op(AVMOpcode::NewBuffer));
+
+        let mem_size = find_memory_size(&module);
+
+        init.push(push_value(int_from_u32(mem_size)));
+        init.push(set64_from_buffer(0));
+        let mut globals = 1;
+        if let Some(sec) = module.global_section() {
+            for g in sec.entries().iter() {
+                init.push(push_value(Value::Int(Uint256::from_u64(init_value(
+                    &module,
+                    g.init_expr(),
+                )))));
+                init.push(set64_from_buffer(globals));
+                globals = globals + 1;
             }
         }
-    }
 
-    set_memory(&mut init);
+        // Add initial memory segments
+        let memory_offset = globals * 8;
+        if let Some(sec) = module.data_section() {
+            for seg in sec.entries().iter() {
+                let offset = match seg.offset() {
+                    Some(a) => init_value(&module, a) as usize,
+                    None => 0,
+                };
+                for (i, bt) in seg.value().iter().enumerate() {
+                    init.push(push_value(int_from_usize(*bt as usize)));
+                    init.push(immed_op(
+                        AVMOpcode::SetBuffer8,
+                        int_from_usize(memory_offset + offset + i),
+                    ));
+                }
+            }
+        }
+
+        set_memory(init);
+        memory_offset
+    } else {
+        let mut globals = 1;
+        if let Some(sec) = module.global_section() {
+            globals += sec.entries().len();
+        }
+
+        // Add initial memory segments
+        let memory_offset = globals * 8;
+        memory_offset
+    };
 
     // Put initial frame to aux stack
     init.push(push_frame(Value::new_tuple(vec![
@@ -1811,15 +2320,17 @@ pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
         Value::Label(Label::WasmFunc(f_count + 1)),
     ])));
 
-    // Add test argument to the frame
-    init.push(get_frame());
-    init.push(push_value(Value::Int(Uint256::from_usize(2))));
-    init.push(set64_from_buffer(0));
-    init.push(set_frame());
+    // Add test arguments to the frame
+    for (i,arg) in test_args.iter().enumerate() {
+        init.push(get_frame());
+        init.push(push_value(Value::Int(Uint256::from_u64(*arg))));
+        init.push(set64_from_buffer(i));
+        init.push(set_frame());
+    }
 
     // Here we should have jump to the correct function
-    if let Some(f) = find_function(&module, "test") {
-        call_jump(&mut init, f);
+    if let Some(f) = find_function(&module, entry) {
+        call_jump(init, f);
     }
 
     let mut label = 2;
@@ -1828,7 +2339,7 @@ pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
     for (idx, f) in code_section.bodies().iter().enumerate() {
         // function return will be in the stack
         init.push(mk_func_label(idx + imports.len()));
-        let (mut res, n_label, avm_gas) =
+        let (mut res, n_label, _avm_gas) =
             handle_function(&module, f, idx, label, calli, memory_offset, max_memory);
         init.append(&mut res);
         label = n_label;
@@ -1840,7 +2351,7 @@ pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
         if f.field().contains("read") {
             init.push(debug_op("Read".to_string()));
             // Get buffer
-            get_buffer(&mut init);
+            get_buffer(init);
             // Get param
             init.push(get_frame());
             init.push(get64_from_buffer(0));
@@ -1849,52 +2360,183 @@ pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
         if f.field().contains("write") {
             init.push(debug_op("Write".to_string()));
             // Get buffer
-            get_buffer(&mut init);
+            get_buffer(init);
             // Get params
             init.push(get_frame());
             init.push(get64_from_buffer(1));
             init.push(get_frame());
             init.push(get64_from_buffer(0));
             init.push(simple_op(AVMOpcode::SetBuffer8));
-            set_buffer(&mut init);
+            set_buffer(init);
         }
         if f.field().contains("getlen") {
-            get_buffer_len(&mut init);
+            get_buffer_len(init);
         }
         if f.field().contains("setlen") {
             init.push(get_frame());
             init.push(get64_from_buffer(0));
-            set_buffer_len(&mut init);
+            set_buffer_len(init);
         }
         if f.field().contains("usegas") {
             let ok_label = label;
             label = label + 1;
             init.push(get_frame());
             init.push(get64_from_buffer(0));
-            get_gas_left(&mut init);
+            get_gas_left(init);
             init.push(simple_op(AVMOpcode::GreaterThan));
-            cjump(&mut init, ok_label);
+            cjump(init, ok_label);
 
             init.push(push_value(int_from_usize(0)));
-            set_gas_left(&mut init);
-            call_jump(&mut init, (f_count + 1) as u32);
+            set_gas_left(init);
+            call_jump(init, (f_count + 1) as u32);
 
             init.push(mk_label(ok_label));
             init.push(get_frame());
             init.push(get64_from_buffer(0));
-            get_gas_left(&mut init);
+            get_gas_left(init);
             init.push(simple_op(AVMOpcode::Minus));
-            set_gas_left(&mut init);
+            set_gas_left(init);
         }
+        if f.field().contains("rvec") {
+            let start_label = label;
+            let end_label = label+1;
+            label = label + 2;
+
+            init.push(debug_op("Rvec".to_string()));
+            // init counter
+            init.push(get_frame());
+            init.push(push_value(int_from_usize(0)));
+            init.push(set64_from_buffer(3));
+            init.push(set_frame());
+
+            init.push(mk_label(start_label));
+            // check if loop ends
+            init.push(get_frame());
+            init.push(get64_from_buffer(3));
+            init.push(get_frame());
+            init.push(get64_from_buffer(2));
+            init.push(simple_op(AVMOpcode::LessThan));
+            cjump(init, end_label);
+
+            init.push(debug_op("Rvec loop".to_string()));
+            // Read from IO
+            get_buffer(init);
+            init.push(get_frame());
+            init.push(get64_from_buffer(1)); // offset
+            init.push(simple_op(AVMOpcode::GetBuffer8));
+            // Write to memory
+            init.push(get_frame());
+            init.push(get64_from_buffer(0)); // pointer
+            init.push(simple_op(AVMOpcode::Swap1));
+            generate_store(init, 0, memory_offset, 1);
+
+            // increment counters
+            init.push(get_frame());
+            init.push(get64_from_buffer(1));
+            init.push(push_value(int_from_usize(1)));
+            init.push(simple_op(AVMOpcode::Plus));
+            init.push(get_frame());
+            init.push(simple_op(AVMOpcode::Swap1));
+            init.push(set64_from_buffer(1));
+            init.push(set_frame());
+
+            init.push(get_frame());
+            init.push(get64_from_buffer(3));
+            init.push(push_value(int_from_usize(1)));
+            init.push(simple_op(AVMOpcode::Plus));
+            init.push(get_frame());
+            init.push(simple_op(AVMOpcode::Swap1));
+            init.push(set64_from_buffer(3));
+            init.push(set_frame());
+
+            // also increment memory pointer
+            init.push(get_frame());
+            init.push(get64_from_buffer(0));
+            init.push(push_value(int_from_usize(1)));
+            init.push(simple_op(AVMOpcode::Plus));
+            init.push(get_frame());
+            init.push(simple_op(AVMOpcode::Swap1));
+            init.push(set64_from_buffer(0));
+            init.push(set_frame());
+
+            jump(init, start_label);
+            
+            init.push(mk_label(end_label));
+        }
+        if f.field().contains("wvec") {
+            let start_label = label;
+            let end_label = label+1;
+            label = label + 2;
+
+            init.push(debug_op("Wvec".to_string()));
+            // init counter
+            init.push(get_frame());
+            init.push(push_value(int_from_usize(0)));
+            init.push(set64_from_buffer(3));
+            init.push(set_frame());
+
+            init.push(mk_label(start_label));
+            // check if loop ends
+            init.push(get_frame());
+            init.push(get64_from_buffer(3));
+            init.push(get_frame());
+            init.push(get64_from_buffer(2));
+            init.push(simple_op(AVMOpcode::LessThan));
+            cjump(init, end_label);
+
+            init.push(debug_op("Wvec loop".to_string()));
+            // Read from memory
+            init.push(get_frame());
+            init.push(get64_from_buffer(0)); // pointer
+            generate_load(init, 0, memory_offset, 1);
+            // Write to IO
+            get_buffer(init);
+            init.push(simple_op(AVMOpcode::Swap1));
+            init.push(get_frame());
+            init.push(get64_from_buffer(1)); // offset
+            init.push(simple_op(AVMOpcode::SetBuffer8));
+            set_buffer(init);
+
+            // increment counters
+            init.push(get_frame());
+            init.push(get64_from_buffer(1));
+            init.push(push_value(int_from_usize(1)));
+            init.push(simple_op(AVMOpcode::Plus));
+            init.push(get_frame());
+            init.push(simple_op(AVMOpcode::Swap1));
+            init.push(set64_from_buffer(1));
+            init.push(set_frame());
+
+            init.push(get_frame());
+            init.push(get64_from_buffer(3));
+            init.push(push_value(int_from_usize(1)));
+            init.push(simple_op(AVMOpcode::Plus));
+            init.push(get_frame());
+            init.push(simple_op(AVMOpcode::Swap1));
+            init.push(set64_from_buffer(3));
+            init.push(set_frame());
+
+            // also increment memory pointer
+            init.push(get_frame());
+            init.push(get64_from_buffer(0));
+            init.push(push_value(int_from_usize(1)));
+            init.push(simple_op(AVMOpcode::Plus));
+            init.push(get_frame());
+            init.push(simple_op(AVMOpcode::Swap1));
+            init.push(set64_from_buffer(0));
+            init.push(set_frame());
+
+            jump(init, start_label);
+            
+            init.push(mk_label(end_label));
+        }
+
         // Return from function
         init.push(get_return_pc());
-        get_return_from_table(&mut init);
+        get_return_from_table(init);
         init.push(simple_op(AVMOpcode::Jump));
     }
 
-    // Error handling
-    init.push(mk_label(1));
-    init.push(simple_op(AVMOpcode::Panic));
     // Indirect calls
     init.push(mk_func_label(f_count));
     if let Some(sec) = module.elements_section() {
@@ -1912,70 +2554,57 @@ pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
                 init.push(push_value(Value::Int(Uint256::from_usize(idx + offset))));
                 init.push(simple_op(AVMOpcode::Equal));
                 init.push(simple_op(AVMOpcode::IsZero));
-                cjump(&mut init, next_label);
+                cjump(init, next_label);
                 // We will call this function now or fail
                 init.push(simple_op(AVMOpcode::Pop));
                 init.push(push_value(Value::Int(hash_ftype(&ftype))));
                 init.push(simple_op(AVMOpcode::Equal));
-                call_cjump(&mut init, *f_idx as u32);
+                call_cjump(init, *f_idx as u32);
+                init.push(push_value(Value::Int(Uint256::from_string_hex("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff").unwrap())));
                 init.push(simple_op(AVMOpcode::Panic));
                 init.push(mk_label(next_label));
             }
         }
     }
 
+    // Error handling
+    init.push(mk_label(1));
+    init.push(push_value(Value::Int(Uint256::from_string_hex("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff").unwrap())));
+    init.push(simple_op(AVMOpcode::Panic));
+
     // Cleaning up
     init.push(mk_func_label(f_count + 1));
     init.push(debug_op("Cleaning up".to_string()));
-    init.push(simple_op(AVMOpcode::Rget));
-    init.push(immed_op(AVMOpcode::Tget, int_from_usize(4)));
-    init.push(simple_op(AVMOpcode::Rget));
-    init.push(immed_op(AVMOpcode::Tget, int_from_usize(2)));
-    init.push(simple_op(AVMOpcode::Rget));
-    init.push(immed_op(AVMOpcode::Tget, int_from_usize(3)));
-    init.push(simple_op(AVMOpcode::AuxPop));
-    init.push(simple_op(AVMOpcode::Pop));
-    init.push(simple_op(AVMOpcode::AuxPop));
-    init.push(simple_op(AVMOpcode::Rset));
-    init.push(simple_op(AVMOpcode::Halt));
-
-    init
 }
 
-pub fn load(buffer: &[u8]) -> Vec<Instruction> {
+pub fn load(buffer: &[u8], param: &[u8]) -> Vec<Instruction> {
+    
     let init = process_wasm(buffer);
-    let mut op_buf = vec![];
-    let mut immed_buf = vec![];
-    let mut has_immed_buf = vec![];
-    let mut has_label_buf = vec![];
-    for inst in init.iter() {
-        op_buf.push(get_inst(inst));
-        if has_immed(inst) {
-            has_immed_buf.push(1u8)
-        } else {
-            has_immed_buf.push(0u8)
-        }
-        if has_label(inst) {
-            has_label_buf.push(1u8)
-        } else {
-            has_label_buf.push(0u8)
-        }
-        immed_buf.push(get_immed(inst));
-    }
 
     let (res, tab) = resolve_labels(init);
-    // println!("Table {}", tab);
     let res = clear_labels(res);
-    // println!("Code {}", );
-    /*
     let mut a = vec![];
     a.push(push_value(int_from_usize(param.len())));
+    // a.push(push_value(int_from_usize(10000)));
     a.push(push_value(Value::new_buffer(param.to_vec())));
     a.push(push_value(tab));
     for i in 3..res.len() {
         a.push(res[i].clone());
     }
     a
-    */
-    res
+}
+
+pub fn make_test(buffer: &[u8], prev_memory: &Buffer, test_args: &[u64], entry: &String, set_memory: bool) -> Vec<Instruction> {
+    
+    let init = process_test(buffer, test_args, entry, set_memory);
+
+    let (res, tab) = resolve_labels(init);
+    let res = clear_labels(res);
+    let mut a = vec![];
+    a.push(push_value(tab));
+    a.push(push_value(Value::Buffer(prev_memory.clone())));
+    for i in 3..res.len() {
+        a.push(res[i].clone());
+    }
+    a
 }

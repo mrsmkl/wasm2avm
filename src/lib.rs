@@ -60,7 +60,7 @@ fn hash_instruction(inst: &Instruction, prev_hash: &Uint256) -> Uint256 {
             buf.push(1u8);
             buf.push(get_inst(inst));
             if let Value::Int(i) = immed.avm_hash() {
-                // println!("immed hash {}", i);
+                    // println!("immed hash {}", i);
                 push_bytes32(&mut buf, &i);
             }
             push_bytes32(&mut buf, prev_hash);
@@ -99,17 +99,12 @@ fn compute_hash(ops : &Vec<Instruction>) -> (Uint256, Uint256) {
 }
 
 pub fn process(input: &[u8]) -> (Vec<u8>, Vec<u8>) {
-    let ops = process_wasm(&input);
-    let (res_ops, _) = resolve_labels(ops.clone());
-    let ops : Vec<&Instruction> = ops.iter().rev().collect();
-
     let mut output = vec![];
     let mut extra = vec![];
 
-/*    let mut buf = vec![];
-    buf.push(1u8);
-    let hash = Uint256::from_bytes(&keccak256(&buf)); */
-    // let hash = Uint256::from_bytes(&keccak256(&input));
+    let ops = process_wasm(&input);
+    let (res_ops, _) = resolve_labels(ops.clone());
+    let ops : Vec<&Instruction> = ops.iter().rev().collect();
 
     let (hash, thash) = compute_hash(&res_ops);
     push_bytes32(&mut output, &hash);
@@ -150,7 +145,6 @@ pub fn process(input: &[u8]) -> (Vec<u8>, Vec<u8>) {
         }
     };
 
-    // println!("Buffer hash {}", Value::new_buffer(vec![]).avm_hash());
     // println!("Op hash {}, Table hash {}, length {}", hash, thash, extra.len());
 
     extra.push(255);
