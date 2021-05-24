@@ -50,7 +50,7 @@ pub fn simple_op(op: AVMOpcode) -> Instruction {
 }
 
 fn debug_op(str: String) -> Instruction {
-    Instruction::debug(str)
+    Instruction::debug(str, Opcode::AVMOpcode(AVMOpcode::Noop))
 }
 
 fn immed_op(op: AVMOpcode, v: Value) -> Instruction {
