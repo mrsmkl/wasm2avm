@@ -29,15 +29,6 @@ extern "C" {
     fn wextra(idx: i32, c: i32);
 }
 
-/*
-fn push_int(output: &mut Vec<u8>, a: &Uint256) {
-    let bytes = a.to_bytes_be();
-    for i in 0..8 {
-        output.push(bytes[i+24])
-    }
-}
-*/
-
 fn push_bytes32(output: &mut Vec<u8>, a: &Uint256) {
     let bytes = a.to_bytes_be();
     for i in 0..32 {
@@ -151,6 +142,7 @@ pub fn process(input: &[u8]) -> (Vec<u8>, Vec<u8>) {
     (output, extra)
 }
 
+/*
 #[wasm_bindgen]
 pub fn test() -> u32 {
     let mut input = vec![];
@@ -176,10 +168,9 @@ pub fn test() -> u32 {
     };
 
     0
-
 }
+*/
 
-/*
 #[wasm_bindgen]
 pub fn test() -> u32 {
 
@@ -187,14 +178,5 @@ pub fn test() -> u32 {
 
     let v = process(&input);
 
-    /*
-    for i in 0..32 {
-        write_buffer(i, output[i as usize] as i32)
-    };
-    setlen(v.len() as i32);
-    */
-
     0
-
 }
-*/
