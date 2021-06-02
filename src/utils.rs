@@ -9,6 +9,7 @@ use ethers_core::utils::keccak256;
 use parity_wasm::elements::Instruction::*;
 use parity_wasm::elements::*;
 use std::collections::HashMap;
+use wasm_bindgen::prelude::*;
 
 #[derive(Debug, Clone)]
 struct Control {
@@ -18,6 +19,16 @@ struct Control {
     else_label: usize,
     is_ite: bool,
     is_loop: bool,
+}
+
+#[wasm_bindgen]
+extern "C" {
+    fn read_buffer(idx: i32) -> i32;
+    fn setlen(idx: i32);
+    fn getlen() -> i32;
+    fn write_buffer(idx: i32, c: i32);
+    fn usegas(gas: i32);
+    fn wextra(idx: i32, c: i32);
 }
 
 const LEVEL: usize = 5;
@@ -48,23 +59,25 @@ fn num_func_returns(ft: &FunctionType) -> usize {
 }
 
 pub fn simple_op(op: AVMOpcode) -> Instruction {
-    Instruction::from_opcode(Opcode::AVMOpcode(op), DebugInfo::from(None))
+    Instruction::from_opcode(op)
 }
 
 fn debug_op(str: String) -> Instruction {
-    Instruction::debug(str, Opcode::AVMOpcode(AVMOpcode::Noop))
+    Instruction::from_opcode(AVMOpcode::Noop)
+    // Instruction::debug(str, Opcode::AVMOpcode(AVMOpcode::Noop))
 }
 
 fn immed_op(op: AVMOpcode, v: Value) -> Instruction {
-    Instruction::from_opcode_imm(Opcode::AVMOpcode(op), v, DebugInfo::from(None))
+    Instruction::from_opcode_imm(op, v)
 }
 
 fn mk_label(idx: usize) -> Instruction {
-    Instruction::from_opcode(Opcode::Label(Label::Evm(idx)), DebugInfo::from(None))
+    Instruction::from_opcode_imm(AVMOpcode::Label, Value::Label(Label::Evm(idx)))
 }
 
 fn mk_func_label(idx: usize) -> Instruction {
-    Instruction::from_opcode(Opcode::Label(Label::WasmFunc(idx)), DebugInfo::from(None))
+    Instruction::from_opcode_imm(AVMOpcode::Label, Value::Label(Label::WasmFunc(idx)))
+    // Instruction::from_opcode(Opcode::Label(Label::WasmFunc(idx)), DebugInfo::from(None))
 }
 
 fn get_from_table(res: &mut Vec<Instruction>, idx: Value) {
@@ -126,53 +139,47 @@ fn call_jump(res: &mut Vec<Instruction>, idx: u32) {
 
 fn get_frame() -> Instruction {
     Instruction::from_opcode_imm(
-        Opcode::AVMOpcode(AVMOpcode::Xget),
+        AVMOpcode::Xget,
         Value::Int(Uint256::from_usize(0)),
-        DebugInfo::from(None),
     )
 }
 
 fn get_return_pc() -> Instruction {
     Instruction::from_opcode_imm(
-        Opcode::AVMOpcode(AVMOpcode::Xget),
+        AVMOpcode::Xget,
         Value::Int(Uint256::from_usize(1)),
-        DebugInfo::from(None),
     )
 }
 
 fn push_frame(v: Value) -> Instruction {
     Instruction::from_opcode_imm(
-        Opcode::AVMOpcode(AVMOpcode::AuxPush),
+        AVMOpcode::AuxPush,
         v,
-        DebugInfo::from(None),
     )
 }
 
 fn push_value(v: Value) -> Instruction {
-    Instruction::from_opcode_imm(Opcode::AVMOpcode(AVMOpcode::Noop), v, DebugInfo::from(None))
+    Instruction::from_opcode_imm(AVMOpcode::Noop, v)
 }
 
 fn set_frame() -> Instruction {
     Instruction::from_opcode_imm(
-        Opcode::AVMOpcode(AVMOpcode::Xset),
+        AVMOpcode::Xset,
         Value::Int(Uint256::from_usize(0)),
-        DebugInfo::from(None),
     )
 }
 
 fn get64_from_buffer(loc: usize) -> Instruction {
     Instruction::from_opcode_imm(
-        Opcode::AVMOpcode(AVMOpcode::GetBuffer64),
+        AVMOpcode::GetBuffer64,
         Value::Int(Uint256::from_usize(loc * 8)),
-        DebugInfo::from(None),
     )
 }
 
 fn set64_from_buffer(loc: usize) -> Instruction {
     Instruction::from_opcode_imm(
-        Opcode::AVMOpcode(AVMOpcode::SetBuffer64),
+        AVMOpcode::SetBuffer64,
         Value::Int(Uint256::from_usize(loc * 8)),
-        DebugInfo::from(None),
     )
 }
 
@@ -671,6 +678,7 @@ fn find_func_type(m: &Module, num: u32) -> &FunctionType {
     }
 }
 
+/*
 fn get_avm_gas(insn: &Instruction) -> usize {
     match insn.opcode {
         Opcode::AVMOpcode(AVMOpcode::Plus) => 3,
@@ -757,6 +765,7 @@ fn get_avm_gas(insn: &Instruction) -> usize {
         _ => 0,
     }
 }
+*/
 
 fn type_code(t: &ValueType) -> u8 {
     match *t {
@@ -843,6 +852,7 @@ fn handle_function(
             res.len()
         );
         */
+        usegas(1);
         let cur_len = res.len();
         res.push(debug_op(format!("{:?} level {} func {} idx {}", *op, ptr, idx, idx_inf)));
         if unreachable {
@@ -1726,11 +1736,13 @@ fn handle_function(
             }
         }
 
+        /*
         let mut gas_acc = 0;
         for i in cur_len..res.len() {
             gas_acc += get_avm_gas(&res[i])
         }
         avm_gas.push(gas_acc);
+        */
     }
 
     // Function return
@@ -1746,7 +1758,7 @@ pub fn clear_labels(arr: Vec<Instruction>) -> Vec<Instruction> {
     let mut res = vec![];
     for inst in arr.iter() {
         match inst.opcode {
-            Opcode::Label(_) => res.push(simple_op(AVMOpcode::Noop)),
+            AVMOpcode::Label => res.push(simple_op(AVMOpcode::Noop)),
             _ => res.push(inst.clone()),
         }
     }
@@ -1803,28 +1815,27 @@ pub fn make_table(tab: &[Value]) -> Value {
     table_to_tuple2(tab, 0, 0, LEVEL - 1, tab.len())
 }
 
-fn value_replace_labels(v: Value, label_map: &HashMap<Label, Value>) -> Result<Value, Label> {
+fn value_replace_labels(v: &Value, label_map: &HashMap<Label, Value>) -> Result<Value, Label> {
     match v {
-        Value::HashOnly(_,_) => Ok(v),
-        Value::Int(_) => Ok(v),
-        Value::CodePoint(_) => Ok(v),
-        Value::Buffer(_) => Ok(v),
+        Value::HashOnly(_,_) => Ok(v.clone()),
+        Value::Int(_) => Ok(v.clone()),
+        Value::CodePoint(_) => Ok(v.clone()),
+        Value::Buffer(_) => Ok(v.clone()),
         Value::Label(label) => {
             let maybe_pc = label_map.get(&label);
             match maybe_pc {
                 Some(pc) => Ok(pc.clone()),
-                None => Err(label),
+                None => Err(label.clone()),
             }
         }
         Value::WasmCodePoint(val, code) => Ok(Value::WasmCodePoint(
-            Box::new(value_replace_labels(*val, label_map)?),
+            Box::new(value_replace_labels(val, label_map)?),
             code.clone(),
         )),
         Value::Tuple(tup) => {
             let mut new_vec = Vec::new();
             for v in tup.iter() {
-                let val = v.clone();
-                new_vec.push(value_replace_labels(val, label_map)?);
+                new_vec.push(value_replace_labels(v, label_map)?);
             }
             Ok(Value::new_tuple(new_vec))
         }
@@ -1832,54 +1843,49 @@ fn value_replace_labels(v: Value, label_map: &HashMap<Label, Value>) -> Result<V
 }
 
 fn inst_replace_labels(
-    inst: Instruction,
+    inst: &Instruction,
     label_map: &HashMap<Label, Value>,
 ) -> Result<Instruction, Label> {
-    match inst.immediate {
+    match &inst.immediate {
         Some(val) => Ok(Instruction::from_opcode_imm(
             inst.opcode,
-            value_replace_labels(val, label_map)?,
-            inst.debug_info,
+            value_replace_labels(&val, label_map)?,
         )),
-        None => Ok(inst),
+        None => Ok(inst.clone()),
     }
 }
 
 pub fn has_label(inst: &Instruction) -> bool {
-    match inst.opcode {
-        Opcode::Label(Label::Evm(_)) => true,
-        Opcode::Label(Label::WasmFunc(_)) => true,
+    inst.opcode == AVMOpcode::Label
+    /*
+    match inst.immediate {
+        Some(Value::Label(Label::Evm(_))) => true,
+        Some(Value::Label(Label::WasmFunc(_))) => true,
         _ => false,
-    }
+    }*/
 }
 
 pub fn get_inst(inst: &Instruction) -> u8 {
-    match inst.opcode {
-        Opcode::AVMOpcode(op) => op as u8,
-        _ => AVMOpcode::Noop as u8,
-    }
+    inst.opcode as u8
 }
 
-pub fn resolve_labels(arr: Vec<Instruction>) -> (Vec<Instruction>, Value) {
+pub fn resolve_labels(arr: &Vec<Instruction>) -> (Vec<Instruction>, Value) {
     let mut labels = HashMap::new();
     let mut tab = vec![];
     for (idx, inst) in arr.iter().enumerate() {
         match inst.opcode {
-            Opcode::Label(Label::Evm(num)) => {
-                tab.push(idx);
-                // println!("Found label {} -> {}", num, int_from_usize(tab.len() - 1));
-                labels.insert(Label::Evm(num), int_from_usize(tab.len() - 1));
-            }
-            Opcode::Label(Label::WasmFunc(num)) => {
-                tab.push(idx);
-                /*
-                println!(
-                    "Found func label {} -> {}",
-                    num,
-                    int_from_usize(tab.len() - 1)
-                );
-                */
-                labels.insert(Label::WasmFunc(num), int_from_usize(tab.len() - 1));
+            AVMOpcode::Label => {
+                match inst.immediate {
+                    Some(Value::Label(Label::Evm(num))) => {
+                        tab.push(idx);
+                        labels.insert(Label::Evm(num), int_from_usize(tab.len() - 1));
+                    }
+                    Some(Value::Label(Label::WasmFunc(num))) => {
+                        tab.push(idx);
+                        labels.insert(Label::WasmFunc(num), int_from_usize(tab.len() - 1));
+                    }
+                    _ => {},
+                }
             }
             _ => {}
         }
@@ -1887,7 +1893,8 @@ pub fn resolve_labels(arr: Vec<Instruction>) -> (Vec<Instruction>, Value) {
     let mut res = vec![];
     for inst in arr.iter() {
         // handle error
-        res.push(inst_replace_labels(inst.clone(), &labels).unwrap());
+        res.push(inst_replace_labels(inst, &labels).unwrap());
+        // res.push(inst.clone());
     }
     // println!("Labels {}", tab.len());
     (res, table_to_tuple(&tab, 0, 0, LEVEL - 1, tab.len()))
@@ -2346,6 +2353,8 @@ fn process_wasm_inner(buffer: &[u8], init: &mut Vec<Instruction>, test_args: &[u
         // println!("Gas {:?}", avm_gas);
     }
 
+    usegas(10000);
+
     for (idx, f) in get_func_imports(&module).iter().enumerate() {
         init.push(mk_func_label(idx));
         if f.field().contains("read") {
@@ -2581,7 +2590,7 @@ pub fn load(buffer: &[u8], param: &[u8]) -> Vec<Instruction> {
     
     let init = process_wasm(buffer);
 
-    let (res, tab) = resolve_labels(init);
+    let (res, tab) = resolve_labels(&init);
     let res = clear_labels(res);
     let mut a = vec![];
     a.push(push_value(int_from_usize(param.len())));
@@ -2598,7 +2607,7 @@ pub fn make_test(buffer: &[u8], prev_memory: &Buffer, test_args: &[u64], entry: 
     
     let init = process_test(buffer, test_args, entry, set_memory);
 
-    let (res, tab) = resolve_labels(init);
+    let (res, tab) = resolve_labels(&init);
     let res = clear_labels(res);
     let mut a = vec![];
     a.push(push_value(tab));

@@ -94,14 +94,18 @@ pub fn process(input: &[u8]) -> (Vec<u8>, Vec<u8>) {
     let mut extra = vec![];
 
     let ops = process_wasm(&input);
-    let (res_ops, _) = resolve_labels(ops.clone());
-    let ops : Vec<&Instruction> = ops.iter().rev().collect();
+    usegas(10000);
+    let (res_ops, _) = resolve_labels(&ops);
+    usegas(10000);
+    // let ops : Vec<&Instruction> = ops.iter().rev().collect();
 
+    /*
     let (hash, thash) = compute_hash(&res_ops);
     push_bytes32(&mut output, &hash);
     push_bytes32(&mut output, &thash);
 
     for (idx, op) in res_ops.iter().rev().enumerate() {
+        usegas(1);
         let inst = get_inst(&op);
         extra.push(inst);
         match &op.immediate {
@@ -135,6 +139,7 @@ pub fn process(input: &[u8]) -> (Vec<u8>, Vec<u8>) {
             extra.push(0)
         }
     };
+    */
 
     // println!("Op hash {}, Table hash {}, length {}", hash, thash, extra.len());
 
@@ -142,7 +147,6 @@ pub fn process(input: &[u8]) -> (Vec<u8>, Vec<u8>) {
     (output, extra)
 }
 
-/*
 #[wasm_bindgen]
 pub fn test() -> u32 {
     let mut input = vec![];
@@ -150,7 +154,7 @@ pub fn test() -> u32 {
     for i in 0..input_len {
         input.push(read_buffer(i) as u8)
     }
-    usegas(input_len / 10 + 1);
+    usegas(1);
 
     let (output, extra) = process(&input);
     /*
@@ -169,8 +173,8 @@ pub fn test() -> u32 {
 
     0
 }
-*/
 
+/*
 #[wasm_bindgen]
 pub fn test() -> u32 {
 
@@ -180,3 +184,4 @@ pub fn test() -> u32 {
 
     0
 }
+*/

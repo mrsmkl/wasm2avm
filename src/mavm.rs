@@ -135,66 +135,26 @@ impl LabelGenerator {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Instruction<T = Opcode> {
-    pub opcode: T,
+pub struct Instruction {
+    pub opcode: AVMOpcode,
     pub immediate: Option<Value>,
-    #[serde(default)]
-    pub debug_info: DebugInfo,
-    pub debug_str: Option<String>,
 }
 
-impl From<Instruction<AVMOpcode>> for Instruction {
 
-    fn from(from: Instruction<AVMOpcode>) -> Self {
-        let Instruction {
-            opcode,
-            immediate,
-            debug_info,
-            debug_str,
-        } = from;
-        Self {
-            opcode: opcode.into(),
-            immediate,
-            debug_info,
-            debug_str,
-        }
-    }
-}
-
-impl<T> Instruction<T> {
-    pub fn new(opcode: T, immediate: Option<Value>, debug_info: DebugInfo) -> Self {
+impl Instruction {
+    pub fn new(opcode: AVMOpcode, immediate: Option<Value>) -> Self {
         Instruction {
             opcode,
             immediate,
-            debug_info,
-            debug_str: None,
         }
     }
 
-    pub fn new_with_debug(opcode: T, immediate: Option<Value>, debug_info: DebugInfo, debug_str: Option<String>) -> Self {
-        Instruction {
-            opcode,
-            immediate,
-            debug_info,
-            debug_str,
-        }
+    pub fn from_opcode(opcode: AVMOpcode) -> Self {
+        Instruction::new(opcode, None)
     }
 
-    pub fn debug(str: String, opcode: T) -> Self {
-        Instruction {
-            opcode,
-            immediate: None,
-            debug_info: DebugInfo::from(None),
-            debug_str: Some(str),
-        }
-    }
-
-    pub fn from_opcode(opcode: T, debug_info: DebugInfo) -> Self {
-        Instruction::new(opcode, None, debug_info)
-    }
-
-    pub fn from_opcode_imm(opcode: T, immediate: Value, debug_info: DebugInfo) -> Self {
-        Instruction::new(opcode, Some(immediate), debug_info)
+    pub fn from_opcode_imm(opcode: AVMOpcode, immediate: Value) -> Self {
+        Instruction::new(opcode, Some(immediate))
     }
 
     pub fn replace_labels(self, label_map: &HashMap<Label, CodePt>) -> Result<Self, Label> {
@@ -202,7 +162,6 @@ impl<T> Instruction<T> {
             Some(val) => Ok(Instruction::from_opcode_imm(
                 self.opcode,
                 val.replace_labels(label_map)?,
-                self.debug_info,
             )),
             None => Ok(self),
         }
@@ -213,7 +172,6 @@ impl<T> Instruction<T> {
             Some(val) => Instruction::from_opcode_imm(
                 self.opcode,
                 val.xlate_labels(xlate_map),
-                self.debug_info,
             ),
             None => self,
         }
@@ -234,6 +192,7 @@ impl Instruction<AVMOpcode> {
 }
 */
 
+/*
 impl Instruction {
     pub fn is_pure(&self) -> bool {
         self.opcode.is_pure()
@@ -278,15 +237,14 @@ impl Instruction {
             None => None,
         };
         (
-            Instruction::new(opcode, imm, self.debug_info),
+            Instruction::new(opcode, imm),
             max_func_offset,
         )
     }
 }
+*/
 
-impl<T> fmt::Display for Instruction<T>
-where
-    T: fmt::Display,
+impl fmt::Display for Instruction
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.immediate {
@@ -1107,6 +1065,7 @@ pub enum AVMOpcode {
     CompileWasm,
     RunWasm,
     MakeWasm,
+    Label = 0xff,
 }
 
 impl Opcode {
@@ -1333,6 +1292,7 @@ impl AVMOpcode {
             AVMOpcode::RunWasm => "runwasm",
             AVMOpcode::CompileWasm => "compilewasm",
             AVMOpcode::MakeWasm => "makewasm",
+            _ => "",
         }
     }
 
@@ -1516,6 +1476,7 @@ impl AVMOpcode {
             AVMOpcode::RunWasm => 0xa7,
             AVMOpcode::CompileWasm => 0xa8,
             AVMOpcode::MakeWasm => 0xa9,
+            _ => 0x00,
         }
     }
 }
