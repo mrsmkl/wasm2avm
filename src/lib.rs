@@ -27,6 +27,11 @@ extern "C" {
     fn write_buffer(idx: i32, c: i32);
     fn usegas(gas: i32);
     fn wextra(idx: i32, c: i32);
+    fn uintimmed(idx: mut *u8); // pointer to uint memory location
+    fn specialimmed(idx: i32);
+    fn pushimmed(idx: i32);
+    fn pushinst(idx: i32);
+    fn cptable();
 }
 
 fn push_bytes32(output: &mut Vec<u8>, a: &Uint256) {
@@ -98,6 +103,30 @@ pub fn process(input: &[u8]) -> (Vec<u8>, Vec<u8>) {
     let (res_ops, _) = resolve_labels(&ops);
     usegas(10000);
     // let ops : Vec<&Instruction> = ops.iter().rev().collect();
+
+    for (idx, op) in res_ops.iter().rev().enumerate() {
+        usegas(1);
+        let inst = get_inst(&op);
+        match &op.immediate {
+            None => pushinst(inst),
+            Some (Value::Int(a)) => {
+                uintimmed(extra.to_bytes_be().as_mut_ptr());
+            },
+            Some (Value::Tuple(tup)) => {
+                if tup.len() == 5 {
+                    specialimmed(0);
+                } else {
+                    panic!("bad immed")
+                }
+            },
+            _ => {
+                panic!("bad immed")
+            }
+        }
+        if has_label(&ops[ops.len()-idx-1]) {
+            cptable();
+        }
+    };
 
     /*
     let (hash, thash) = compute_hash(&res_ops);
