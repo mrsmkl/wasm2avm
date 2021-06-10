@@ -8,7 +8,7 @@ mod uint256;
 mod stringtable;
 
 use wasm_bindgen::prelude::*;
-use crate::utils::{process_wasm, has_label, get_inst, resolve_labels, simple_op};
+use crate::utils::{process_wasm, has_label, get_inst, get_immed, resolve_labels, simple_op};
 use crate::mavm::{Label,Value,Instruction,AVMOpcode};
 use crate::uint256::{Uint256};
 use ethers_core::utils::keccak256;
@@ -27,11 +27,12 @@ extern "C" {
     fn write_buffer(idx: i32, c: i32);
     fn usegas(gas: i32);
     fn wextra(idx: i32, c: i32);
-    fn uintimmed(idx: mut *u8); // pointer to uint memory location
+    fn uintimmed(idx: *mut u8); // pointer to uint memory location
     fn specialimmed(idx: i32);
+    fn globalimmed(idx: i32);
     fn pushimmed(idx: i32);
     fn pushinst(idx: i32);
-    fn cptable();
+    fn cptable(idx: i32);
 }
 
 fn push_bytes32(output: &mut Vec<u8>, a: &Uint256) {
@@ -100,31 +101,37 @@ pub fn process(input: &[u8]) -> (Vec<u8>, Vec<u8>) {
 
     let ops = process_wasm(&input);
     usegas(10000);
-    let (res_ops, _) = resolve_labels(&ops);
+    let (res_ops, labels) = resolve_labels(&ops);
+    let labels = labels as i32;
     usegas(10000);
     // let ops : Vec<&Instruction> = ops.iter().rev().collect();
+
+    let mut num = 0;
 
     for (idx, op) in res_ops.iter().rev().enumerate() {
         usegas(1);
         let inst = get_inst(&op);
-        match &op.immediate {
-            None => pushinst(inst),
+        match get_immed(&op) {
+            None => pushinst((inst as u32) as i32),
             Some (Value::Int(a)) => {
-                uintimmed(extra.to_bytes_be().as_mut_ptr());
+                uintimmed(a.to_bytes_be().as_mut_ptr());
+                pushimmed((inst as u32) as i32);
             },
             Some (Value::Tuple(tup)) => {
-                if tup.len() == 5 {
-                    specialimmed(0);
+                if tup.len() == 2 {
+                    specialimmed(tup.len() as i32);
                 } else {
-                    panic!("bad immed")
+                    globalimmed(tup.len() as i32);
                 }
+                pushimmed((inst as u32) as i32);
             },
             _ => {
                 panic!("bad immed")
             }
         }
         if has_label(&ops[ops.len()-idx-1]) {
-            cptable();
+            cptable(labels - num - 1);
+            num = num+1;
         }
     };
 

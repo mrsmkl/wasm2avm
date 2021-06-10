@@ -1075,10 +1075,20 @@ fn handle_function(
                 let return_label = label;
                 label = label + 1;
                 // push new frame to aux stack
+
+                /*
                 res.push(push_frame(Value::new_tuple(vec![
                     Value::new_buffer(vec![]),
                     Value::Label(Label::Evm(return_label)),
+                ])));*/
+
+                res.push(push_value(Value::Label(Label::Evm(return_label))));
+                res.push(push_value(Value::new_tuple(vec![
+                    Value::new_buffer(vec![]),
+                    int_from_usize(0)
                 ])));
+                res.push(immed_op(AVMOpcode::Tset, int_from_usize(1)));
+                res.push(simple_op(AVMOpcode::AuxPush));
                 // Push args to frame
                 for i in 0..ftype.params().len() {
                     res.push(get_frame());
@@ -1112,6 +1122,7 @@ fn handle_function(
                     Value::new_buffer(vec![]),
                     Value::Label(Label::Evm(return_label)),
                 ])));
+
                 // Push args to frame
                 for i in 0..ftype.params().len() {
                     res.push(get_frame());
@@ -1874,7 +1885,15 @@ pub fn get_inst(inst: &Instruction) -> u8 {
     inst.opcode as u8
 }
 
-pub fn resolve_labels(arr: &Vec<Instruction>) -> (Vec<Instruction>, Value) {
+pub fn get_immed(inst: &Instruction) -> &Option<Value> {
+    if inst.opcode == AVMOpcode::Label {
+        &None
+    } else {
+        &inst.immediate
+    }
+}
+
+pub fn resolve_labels(arr: &Vec<Instruction>) -> (Vec<Instruction>, usize) {
     let mut labels = HashMap::new();
     let mut tab = vec![];
     usegas(10000);
@@ -1908,7 +1927,8 @@ pub fn resolve_labels(arr: &Vec<Instruction>) -> (Vec<Instruction>, Value) {
     // let res = arr.iter().map(|inst| inst_replace_labels(inst, &labels).unwrap()).collect();
     usegas(10000);
     // println!("Labels {}", tab.len());
-    (res, table_to_tuple(&tab, 0, 0, LEVEL - 1, tab.len()))
+    // (res, table_to_tuple(&tab, 0, 0, LEVEL - 1, tab.len()))
+    (res, tab.len())
 }
 
 fn init_value(_m: &Module, expr: &InitExpr) -> u64 {
@@ -2334,11 +2354,19 @@ fn process_wasm_inner(buffer: &[u8], init: &mut Vec<Instruction>, test_args: &[u
     };
 
     // Put initial frame to aux stack
+    init.push(push_value(Value::Label(Label::WasmFunc(f_count + 1))));
+    init.push(push_value(Value::new_tuple(vec![
+        Value::new_buffer(vec![]),
+        int_from_usize(0)
+    ])));
+    init.push(immed_op(AVMOpcode::Tset, int_from_usize(1)));
+    init.push(simple_op(AVMOpcode::AuxPush));
+/*
     init.push(push_frame(Value::new_tuple(vec![
         Value::new_buffer(vec![]),
         Value::Label(Label::WasmFunc(f_count + 1)),
     ])));
-
+*/
     // Add test arguments to the frame
     for (i,arg) in test_args.iter().enumerate() {
         init.push(get_frame());
@@ -2598,6 +2626,7 @@ fn process_wasm_inner(buffer: &[u8], init: &mut Vec<Instruction>, test_args: &[u
     // init.push(debug_op("Cleaning up".to_string()));
 }
 
+/*
 pub fn load(buffer: &[u8], param: &[u8]) -> Vec<Instruction> {
     
     let init = process_wasm(buffer);
@@ -2629,3 +2658,4 @@ pub fn make_test(buffer: &[u8], prev_memory: &Buffer, test_args: &[u64], entry: 
     }
     a
 }
+*/
