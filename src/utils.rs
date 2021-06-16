@@ -119,6 +119,41 @@ fn get_return_from_table(res: &mut Vec<Instruction>) {
     res.push(simple_op(AVMOpcode::Pop));
 }
 
+fn set_jump_table(res: &mut Vec<Instruction>) {
+    // idx, codept
+    res.push(simple_op(AVMOpcode::AuxPush)); // codept ;; idx
+    res.push(simple_op(AVMOpcode::Rget));
+    res.push(immed_op(AVMOpcode::Tget, int_from_usize(7)));
+    res.push(simple_op(AVMOpcode::AuxPop));
+    for _i in 0..LEVEL {
+        // Stack: idx, table, codept
+        res.push(simple_op(AVMOpcode::Dup0)); // idx, idx, table, codept
+        res.push(immed_op(AVMOpcode::BitwiseAnd, int_from_usize(7))); // idx (mod), idx, table
+        res.push(simple_op(AVMOpcode::Swap1)); // idx, idx (mod), table
+        res.push(immed_op(AVMOpcode::ShiftRight, int_from_usize(3))); // idx, idx (mod), table
+        res.push(simple_op(AVMOpcode::Swap2)); // table, idx (mod), idx
+        res.push(simple_op(AVMOpcode::Swap1)); // idx (mod), table, idx
+                                               // push idx and table to aux staxk
+        res.push(simple_op(AVMOpcode::Dup0));
+        res.push(simple_op(AVMOpcode::AuxPush)); // ;; idx (mod)
+        res.push(simple_op(AVMOpcode::Dup1));
+        res.push(simple_op(AVMOpcode::AuxPush)); // ;; table, idx (mod)
+        res.push(simple_op(AVMOpcode::Tget)); // table, idx
+        res.push(simple_op(AVMOpcode::Swap1)); // idx, table
+    }
+    res.push(simple_op(AVMOpcode::Pop));
+    res.push(simple_op(AVMOpcode::Pop)); // codept
+                                         // need to consume table, idx from aux stack
+    for _i in 0..LEVEL {
+        res.push(simple_op(AVMOpcode::AuxPop)); // table, codept ;; idx (mod)
+        res.push(simple_op(AVMOpcode::AuxPop)); // idx, table, codept
+        res.push(simple_op(AVMOpcode::Tset)); // table
+    }
+    res.push(simple_op(AVMOpcode::Rget));
+    res.push(immed_op(AVMOpcode::Tset, int_from_usize(7)));
+    res.push(simple_op(AVMOpcode::Rset));
+}
+
 fn cjump(res: &mut Vec<Instruction>, idx: usize) {
     get_from_table(res, Value::Label(Label::Evm(idx)));
     res.push(simple_op(AVMOpcode::Cjump));
@@ -2578,6 +2613,71 @@ fn process_wasm_inner(buffer: &[u8], init: &mut Vec<Instruction>, test_args: &[u
             jump(init, start_label);
             
             init.push(mk_label(end_label));
+        }
+        if f.field().contains("uintimmed") {
+            get_memory(init); // buffer
+            init.push(get_frame());
+            init.push(get64_from_buffer(0)); // address, buffer
+            init.push(immed_op(
+                AVMOpcode::Plus,
+                Value::Int(Uint256::from_usize(memory_offset)),
+            )); // address, buffer
+            init.push(simple_op(AVMOpcode::GetBuffer256));
+            init.push(simple_op(AVMOpcode::Rget));
+            init.push(immed_op(AVMOpcode::Tset, int_from_usize(5)));
+            init.push(simple_op(AVMOpcode::Rset));
+        }
+        if f.field().contains("specialimmed") {
+            init.push(push_value(Value::new_tuple(vec![
+                Value::new_buffer(vec![]), // frame
+                int_from_usize(0),         // call table
+            ])));
+            init.push(simple_op(AVMOpcode::Rget));
+            init.push(immed_op(AVMOpcode::Tset, int_from_usize(5)));
+            init.push(simple_op(AVMOpcode::Rset));
+        }
+        if f.field().contains("globalimmed") {
+            init.push(push_value(Value::new_tuple(vec![
+                Value::new_buffer(vec![]), // memory
+                int_from_usize(0),         // call table
+                Value::new_buffer(vec![]), // IO buffer
+                int_from_usize(0),         // IO len
+                int_from_usize(1000000),   // gas left
+                int_from_usize(0),         // Immed
+                int_from_usize(0),         // Instruction
+            ])));
+            init.push(simple_op(AVMOpcode::Rget));
+            init.push(immed_op(AVMOpcode::Tset, int_from_usize(5)));
+            init.push(simple_op(AVMOpcode::Rset));
+        }
+        if f.field().contains("pushinst") {
+            init.push(simple_op(AVMOpcode::Rget));
+            init.push(immed_op(AVMOpcode::Tget, int_from_usize(6))); // codepoint
+            init.push(get_frame());
+            init.push(get64_from_buffer(0)); // insn, codepoint
+            init.push(simple_op(AVMOpcode::PushInsn));
+            init.push(simple_op(AVMOpcode::Rget));
+            init.push(immed_op(AVMOpcode::Tset, int_from_usize(6)));
+            init.push(simple_op(AVMOpcode::Rset));
+        }
+        if f.field().contains("pushimmed") {
+            init.push(simple_op(AVMOpcode::Rget));
+            init.push(immed_op(AVMOpcode::Tget, int_from_usize(6))); // codepoint
+            init.push(simple_op(AVMOpcode::Rget));
+            init.push(immed_op(AVMOpcode::Tget, int_from_usize(5))); // immed, codepoint
+            init.push(get_frame());
+            init.push(get64_from_buffer(0)); // insn, immed, codepoint
+            init.push(simple_op(AVMOpcode::PushInsnImm));
+            init.push(simple_op(AVMOpcode::Rget));
+            init.push(immed_op(AVMOpcode::Tset, int_from_usize(6)));
+            init.push(simple_op(AVMOpcode::Rset));
+        }
+        if f.field().contains("cptable") {
+            init.push(simple_op(AVMOpcode::Rget));
+            init.push(immed_op(AVMOpcode::Tget, int_from_usize(6))); // codepoint
+            init.push(get_frame());
+            init.push(get64_from_buffer(0)); // idx, codept
+            set_jump_table(init);
         }
 
         // Return from function
