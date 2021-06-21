@@ -1917,7 +1917,11 @@ pub fn has_label(inst: &Instruction) -> bool {
 }
 
 pub fn get_inst(inst: &Instruction) -> u8 {
-    inst.opcode as u8
+    if inst.opcode == AVMOpcode::Label {
+        AVMOpcode::Noop as u8
+    } else {
+        inst.opcode as u8
+    }
 }
 
 pub fn get_immed(inst: &Instruction) -> &Option<Value> {
@@ -2241,6 +2245,25 @@ fn get_func_imports(m: &Module) -> Vec<&ImportEntry> {
     }
 }
 
+fn simple_table_aux(level: usize) -> Value {
+    if level == 0 {
+        let mut v = vec![];
+        for i in 0..8 {
+            v.push(int_from_usize(0))
+        }
+        return Value::new_tuple(v);
+    }
+    let mut v = vec![];
+    for i in 0..8 {
+        v.push(simple_table_aux(level - 1));
+    }
+    return Value::new_tuple(v);
+}
+
+pub fn simple_table() -> Value {
+    simple_table_aux(LEVEL - 1)
+}
+
 pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
     let mut init = vec![];
     init.reserve(1000000);
@@ -2257,14 +2280,22 @@ pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
     // Initialize register
     init.push(push_value(Value::new_tuple(vec![
         Value::new_buffer(vec![]), // memory
-        int_from_usize(0), // call table
+        int_from_usize(0),         // call table
         Value::new_buffer(vec![]), // IO buffer
-        int_from_usize(0), // IO len
-        int_from_usize(1000000), // gas left
+        int_from_usize(0),         // IO len
+        int_from_usize(1000000000),   // gas left
+        int_from_usize(0),         // Immed
+        int_from_usize(0),         // Code point
+        simple_table(),            // Generated jump table
     ])));
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(1)));
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(2)));
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(3)));
+    init.push(simple_op(AVMOpcode::Rset));
+
+    init.push(simple_op(AVMOpcode::ErrCodePoint));
+    init.push(simple_op(AVMOpcode::Rget));
+    init.push(immed_op(AVMOpcode::Tset, int_from_usize(6)));
     init.push(simple_op(AVMOpcode::Rset));
 
     process_wasm_inner(buffer, &mut init, &vec![2], &"test".to_string(), true);
