@@ -178,6 +178,7 @@ pub fn process(input: &[u8]) -> (Vec<u8>, Vec<u8>) {
 
     // println!("Op hash {}, Table hash {}, length {}", hash, thash, extra.len());
 
+    output.push(255);
     extra.push(255);
     (output, extra)
 }

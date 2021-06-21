@@ -1107,12 +1107,14 @@ fn handle_function(
                     Value::Label(Label::Evm(return_label)),
                 ])));*/
 
+                res.push(simple_op(AVMOpcode::NewBuffer));
                 res.push(push_value(Value::Label(Label::Evm(return_label))));
                 res.push(push_value(Value::new_tuple(vec![
                     Value::new_buffer(vec![]),
                     int_from_usize(0),
                 ])));
                 res.push(immed_op(AVMOpcode::Tset, int_from_usize(1)));
+                res.push(immed_op(AVMOpcode::Tset, int_from_usize(0)));
                 res.push(simple_op(AVMOpcode::AuxPush));
                 // Push args to frame
                 for i in 0..ftype.params().len() {
@@ -1143,10 +1145,15 @@ fn handle_function(
                 // Save func ptr
                 res.push(simple_op(AVMOpcode::AuxPush));
                 // push new frame to aux stack
-                res.push(push_frame(Value::new_tuple(vec![
+                res.push(simple_op(AVMOpcode::NewBuffer));
+                res.push(push_value(Value::Label(Label::Evm(return_label))));
+                res.push(push_value(Value::new_tuple(vec![
                     Value::new_buffer(vec![]),
-                    Value::Label(Label::Evm(return_label)),
+                    int_from_usize(0),
                 ])));
+                res.push(immed_op(AVMOpcode::Tset, int_from_usize(1)));
+                res.push(immed_op(AVMOpcode::Tset, int_from_usize(0)));
+                res.push(simple_op(AVMOpcode::AuxPush));
 
                 // Push args to frame
                 for i in 0..ftype.params().len() {
@@ -2688,9 +2695,10 @@ fn process_wasm_inner(
                 int_from_usize(0),         // call table
                 Value::new_buffer(vec![]), // IO buffer
                 int_from_usize(0),         // IO len
-                int_from_usize(1000000),   // gas left
+                int_from_usize(1000000000),   // gas left
                 int_from_usize(0),         // Immed
                 int_from_usize(0),         // Instruction
+                simple_table(),
             ])));
             init.push(simple_op(AVMOpcode::Rget));
             init.push(immed_op(AVMOpcode::Tset, int_from_usize(5)));
