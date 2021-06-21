@@ -1,4 +1,3 @@
-
 use crate::mavm::DebugInfo;
 use crate::mavm::{
     AVMOpcode, Buffer, CodePt, Instruction, Label, /*LabelGenerator,*/ Opcode, Value,
@@ -175,24 +174,15 @@ fn call_jump(res: &mut Vec<Instruction>, idx: u32) {
 }
 
 fn get_frame() -> Instruction {
-    Instruction::from_opcode_imm(
-        AVMOpcode::Xget,
-        Value::Int(Uint256::from_usize(0)),
-    )
+    Instruction::from_opcode_imm(AVMOpcode::Xget, Value::Int(Uint256::from_usize(0)))
 }
 
 fn get_return_pc() -> Instruction {
-    Instruction::from_opcode_imm(
-        AVMOpcode::Xget,
-        Value::Int(Uint256::from_usize(1)),
-    )
+    Instruction::from_opcode_imm(AVMOpcode::Xget, Value::Int(Uint256::from_usize(1)))
 }
 
 fn push_frame(v: Value) -> Instruction {
-    Instruction::from_opcode_imm(
-        AVMOpcode::AuxPush,
-        v,
-    )
+    Instruction::from_opcode_imm(AVMOpcode::AuxPush, v)
 }
 
 fn push_value(v: Value) -> Instruction {
@@ -200,10 +190,7 @@ fn push_value(v: Value) -> Instruction {
 }
 
 fn set_frame() -> Instruction {
-    Instruction::from_opcode_imm(
-        AVMOpcode::Xset,
-        Value::Int(Uint256::from_usize(0)),
-    )
+    Instruction::from_opcode_imm(AVMOpcode::Xset, Value::Int(Uint256::from_usize(0)))
 }
 
 fn get64_from_buffer(loc: usize) -> Instruction {
@@ -564,10 +551,7 @@ fn make_popcnt(res: &mut Vec<Instruction>) {
         Value::Int(Uint256::from_u64(m4)),
     ));
     // x = (x * h01) >> 56;
-    res.push(immed_op(
-        AVMOpcode::Mul,
-        Value::Int(Uint256::from_u64(h01)),
-    ));
+    res.push(immed_op(AVMOpcode::Mul, Value::Int(Uint256::from_u64(h01))));
     res.push(immed_op(
         AVMOpcode::ShiftRight,
         Value::Int(Uint256::from_usize(56)),
@@ -656,7 +640,9 @@ fn trap_zero_division_s32(res: &mut Vec<Instruction>) {
     ));
     res.push(simple_op(AVMOpcode::Dup2));
     res.push(simple_op(AVMOpcode::BitwiseOr));
-    res.push(push_value(Value::Int(Uint256::from_string_hex("ffffffff80000000").unwrap())));
+    res.push(push_value(Value::Int(
+        Uint256::from_string_hex("ffffffff80000000").unwrap(),
+    )));
     res.push(simple_op(AVMOpcode::Equal));
     cjump(res, 1);
 }
@@ -669,7 +655,9 @@ fn trap_zero_division_s64(res: &mut Vec<Instruction>) {
     ));
     res.push(simple_op(AVMOpcode::Dup2));
     res.push(simple_op(AVMOpcode::BitwiseOr));
-    res.push(push_value(Value::Int(Uint256::from_string_hex("ffffffffffffffff8000000000000000").unwrap())));
+    res.push(push_value(Value::Int(
+        Uint256::from_string_hex("ffffffffffffffff8000000000000000").unwrap(),
+    )));
     res.push(simple_op(AVMOpcode::Equal));
     cjump(res, 1);
 }
@@ -923,9 +911,9 @@ fn handle_function(
                 c.else_label = 0;
                 stack.push(c);
                 unreachable = false;
-                continue
+                continue;
             } else {
-                continue
+                continue;
             }
         }
 
@@ -937,10 +925,10 @@ fn handle_function(
                 if stack.len() == 0 {
                     break;
                 }
-                let c: &Control = &stack[stack.len()-1];
+                let c: &Control = &stack[stack.len() - 1];
                 ptr = c.level;
                 unreachable = true;
-            },
+            }
             Block(bt) => {
                 let end_label = label;
                 label = label + 1;
@@ -1089,7 +1077,9 @@ fn handle_function(
                 res.push(set_frame());
             }
             I32Const(x) => {
-                res.push(push_value(Value::Int(Uint256::from_u64((*x as u64) & 0xffffffff))));
+                res.push(push_value(Value::Int(Uint256::from_u64(
+                    (*x as u64) & 0xffffffff,
+                ))));
                 ptr = ptr + 1;
             }
             I64Const(x) => {
@@ -1120,7 +1110,7 @@ fn handle_function(
                 res.push(push_value(Value::Label(Label::Evm(return_label))));
                 res.push(push_value(Value::new_tuple(vec![
                     Value::new_buffer(vec![]),
-                    int_from_usize(0)
+                    int_from_usize(0),
                 ])));
                 res.push(immed_op(AVMOpcode::Tset, int_from_usize(1)));
                 res.push(simple_op(AVMOpcode::AuxPush));
@@ -1763,7 +1753,7 @@ fn handle_function(
                 res.push(simple_op(AVMOpcode::Dup0));
                 res.push(immed_op(
                     AVMOpcode::GreaterThan,
-                    Value::Int(Uint256::from_usize(max_memory+1)),
+                    Value::Int(Uint256::from_usize(max_memory + 1)),
                 ));
                 cjump(res, ok_label);
                 res.push(simple_op(AVMOpcode::Pop));
@@ -1778,7 +1768,7 @@ fn handle_function(
                 res.push(mk_label(end_label));
                 label = label + 2;
             }
-            _ => {},
+            _ => {}
             /*
             i => {
                 panic!("Unknown opcode {:?}", i);
@@ -1838,7 +1828,13 @@ fn table_to_tuple(tab: &[usize], prefix: usize, shift: usize, level: usize, limi
     return Value::new_tuple(v);
 }
 
-fn table_to_tuple2(tab: &[Value], prefix: usize, shift: usize, level: usize, limit: usize) -> Value {
+fn table_to_tuple2(
+    tab: &[Value],
+    prefix: usize,
+    shift: usize,
+    level: usize,
+    limit: usize,
+) -> Value {
     if prefix > limit {
         return int_from_usize(0);
     }
@@ -1868,7 +1864,7 @@ pub fn make_table(tab: &[Value]) -> Value {
 
 fn value_replace_labels(v: &Value, label_map: &HashMap<Label, Value>) -> Result<Value, Label> {
     match v {
-        Value::HashOnly(_,_) => Ok(v.clone()),
+        Value::HashOnly(_, _) => Ok(v.clone()),
         Value::Int(_) => Ok(v.clone()),
         Value::CodePoint(_) => Ok(v.clone()),
         Value::Buffer(_) => Ok(v.clone()),
@@ -1938,19 +1934,17 @@ pub fn resolve_labels(arr: &Vec<Instruction>) -> (Vec<Instruction>, usize) {
     usegas(10000);
     for (idx, inst) in arr.iter().enumerate() {
         match inst.opcode {
-            AVMOpcode::Label => {
-                match inst.immediate {
-                    Some(Value::Label(Label::Evm(num))) => {
-                        tab.push(idx);
-                        labels.insert(Label::Evm(num), int_from_usize(tab.len() - 1));
-                    }
-                    Some(Value::Label(Label::WasmFunc(num))) => {
-                        tab.push(idx);
-                        labels.insert(Label::WasmFunc(num), int_from_usize(tab.len() - 1));
-                    }
-                    _ => {},
+            AVMOpcode::Label => match inst.immediate {
+                Some(Value::Label(Label::Evm(num))) => {
+                    tab.push(idx);
+                    labels.insert(Label::Evm(num), int_from_usize(tab.len() - 1));
                 }
-            }
+                Some(Value::Label(Label::WasmFunc(num))) => {
+                    tab.push(idx);
+                    labels.insert(Label::WasmFunc(num), int_from_usize(tab.len() - 1));
+                }
+                _ => {}
+            },
             _ => {}
         }
     }
@@ -2164,7 +2158,7 @@ impl JitWasm {
                 Ok(())
             }
         });
-    
+
         let error_func = Func::wrap(&store, || {
             panic!("Unknown import");
         });
@@ -2279,14 +2273,14 @@ pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
 
     // Initialize register
     init.push(push_value(Value::new_tuple(vec![
-        Value::new_buffer(vec![]), // memory
-        int_from_usize(0),         // call table
-        Value::new_buffer(vec![]), // IO buffer
-        int_from_usize(0),         // IO len
-        int_from_usize(1000000000),   // gas left
-        int_from_usize(0),         // Immed
-        int_from_usize(0),         // Code point
-        simple_table(),            // Generated jump table
+        Value::new_buffer(vec![]),  // memory
+        int_from_usize(0),          // call table
+        Value::new_buffer(vec![]),  // IO buffer
+        int_from_usize(0),          // IO len
+        int_from_usize(1000000000), // gas left
+        int_from_usize(0),          // Immed
+        int_from_usize(0),          // Code point
+        simple_table(),             // Generated jump table
     ])));
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(1)));
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(2)));
@@ -2301,6 +2295,10 @@ pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
     process_wasm_inner(buffer, &mut init, &vec![2], &"test".to_string(), true);
 
     init.push(simple_op(AVMOpcode::Rget));
+    init.push(immed_op(AVMOpcode::Tget, int_from_usize(7)));
+    init.push(simple_op(AVMOpcode::Rget));
+    init.push(immed_op(AVMOpcode::Tget, int_from_usize(6)));
+    init.push(simple_op(AVMOpcode::Rget));
     init.push(immed_op(AVMOpcode::Tget, int_from_usize(4)));
     init.push(simple_op(AVMOpcode::Rget));
     init.push(immed_op(AVMOpcode::Tget, int_from_usize(2)));
@@ -2313,10 +2311,14 @@ pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
     init.push(simple_op(AVMOpcode::Noop));
 
     init
-
 }
 
-fn process_test(buffer: &[u8], test_args: &[u64], entry: &String, set_memory: bool) -> Vec<Instruction> {
+fn process_test(
+    buffer: &[u8],
+    test_args: &[u64],
+    entry: &String,
+    set_memory: bool,
+) -> Vec<Instruction> {
     let mut init = vec![];
 
     // These might become replaced
@@ -2331,10 +2333,10 @@ fn process_test(buffer: &[u8], test_args: &[u64], entry: &String, set_memory: bo
     // Initialize register
     init.push(push_value(Value::new_tuple(vec![
         Value::new_buffer(vec![]), // memory
-        int_from_usize(0), // call table
+        int_from_usize(0),         // call table
         Value::new_buffer(vec![]), // IO buffer
-        int_from_usize(0), // IO len
-        int_from_usize(100000), // gas left
+        int_from_usize(0),         // IO len
+        int_from_usize(100000),    // gas left
     ])));
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(0)));
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(1)));
@@ -2354,10 +2356,15 @@ fn process_test(buffer: &[u8], test_args: &[u64], entry: &String, set_memory: bo
     init.push(simple_op(AVMOpcode::Noop));
 
     init
-
 }
 
-fn process_wasm_inner(buffer: &[u8], init: &mut Vec<Instruction>, test_args: &[u64], entry: &String, init_memory: bool) {
+fn process_wasm_inner(
+    buffer: &[u8],
+    init: &mut Vec<Instruction>,
+    test_args: &[u64],
+    entry: &String,
+    init_memory: bool,
+) {
     let module = parity_wasm::deserialize_buffer::<Module>(buffer).unwrap();
     assert!(module.code_section().is_some());
 
@@ -2423,18 +2430,18 @@ fn process_wasm_inner(buffer: &[u8], init: &mut Vec<Instruction>, test_args: &[u
     init.push(push_value(Value::Label(Label::WasmFunc(f_count + 1))));
     init.push(push_value(Value::new_tuple(vec![
         Value::new_buffer(vec![]),
-        int_from_usize(0)
+        int_from_usize(0),
     ])));
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(1)));
     init.push(simple_op(AVMOpcode::AuxPush));
-/*
-    init.push(push_frame(Value::new_tuple(vec![
-        Value::new_buffer(vec![]),
-        Value::Label(Label::WasmFunc(f_count + 1)),
-    ])));
-*/
+    /*
+        init.push(push_frame(Value::new_tuple(vec![
+            Value::new_buffer(vec![]),
+            Value::Label(Label::WasmFunc(f_count + 1)),
+        ])));
+    */
     // Add test arguments to the frame
-    for (i,arg) in test_args.iter().enumerate() {
+    for (i, arg) in test_args.iter().enumerate() {
         init.push(get_frame());
         init.push(push_value(Value::Int(Uint256::from_u64(*arg))));
         init.push(set64_from_buffer(i));
@@ -2452,8 +2459,16 @@ fn process_wasm_inner(buffer: &[u8], init: &mut Vec<Instruction>, test_args: &[u
     for (idx, f) in code_section.bodies().iter().enumerate() {
         // function return will be in the stack
         init.push(mk_func_label(idx + imports.len()));
-        let n_label =
-            handle_function(init, &module, f, idx, label, calli, memory_offset, max_memory);
+        let n_label = handle_function(
+            init,
+            &module,
+            f,
+            idx,
+            label,
+            calli,
+            memory_offset,
+            max_memory,
+        );
         // init.append(res);
         label = n_label;
         // println!("Gas {:?}", avm_gas);
@@ -2514,7 +2529,7 @@ fn process_wasm_inner(buffer: &[u8], init: &mut Vec<Instruction>, test_args: &[u
         }
         if f.field().contains("rvec") {
             let start_label = label;
-            let end_label = label+1;
+            let end_label = label + 1;
             label = label + 2;
 
             // init.push(debug_op("Rvec".to_string()));
@@ -2575,12 +2590,12 @@ fn process_wasm_inner(buffer: &[u8], init: &mut Vec<Instruction>, test_args: &[u
             init.push(set_frame());
 
             jump(init, start_label);
-            
+
             init.push(mk_label(end_label));
         }
         if f.field().contains("wvec") {
             let start_label = label;
-            let end_label = label+1;
+            let end_label = label + 1;
             label = label + 2;
 
             // init.push(debug_op("Wvec".to_string()));
@@ -2642,7 +2657,7 @@ fn process_wasm_inner(buffer: &[u8], init: &mut Vec<Instruction>, test_args: &[u
             init.push(set_frame());
 
             jump(init, start_label);
-            
+
             init.push(mk_label(end_label));
         }
         if f.field().contains("uintimmed") {
@@ -2740,7 +2755,12 @@ fn process_wasm_inner(buffer: &[u8], init: &mut Vec<Instruction>, test_args: &[u
                 init.push(push_value(Value::Int(hash_ftype(&ftype))));
                 init.push(simple_op(AVMOpcode::Equal));
                 call_cjump(init, *f_idx as u32);
-                init.push(push_value(Value::Int(Uint256::from_string_hex("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff").unwrap())));
+                init.push(push_value(Value::Int(
+                    Uint256::from_string_hex(
+                        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                    )
+                    .unwrap(),
+                )));
                 init.push(simple_op(AVMOpcode::Panic));
                 init.push(mk_label(next_label));
             }
@@ -2749,7 +2769,10 @@ fn process_wasm_inner(buffer: &[u8], init: &mut Vec<Instruction>, test_args: &[u
 
     // Error handling
     init.push(mk_label(1));
-    init.push(push_value(Value::Int(Uint256::from_string_hex("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff").unwrap())));
+    init.push(push_value(Value::Int(
+        Uint256::from_string_hex("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+            .unwrap(),
+    )));
     init.push(simple_op(AVMOpcode::Panic));
 
     // Cleaning up
@@ -2759,7 +2782,7 @@ fn process_wasm_inner(buffer: &[u8], init: &mut Vec<Instruction>, test_args: &[u
 
 /*
 pub fn load(buffer: &[u8], param: &[u8]) -> Vec<Instruction> {
-    
+
     let init = process_wasm(buffer);
 
     let (res, tab) = resolve_labels(&init);
@@ -2776,7 +2799,7 @@ pub fn load(buffer: &[u8], param: &[u8]) -> Vec<Instruction> {
 }
 
 pub fn make_test(buffer: &[u8], prev_memory: &Buffer, test_args: &[u64], entry: &String, set_memory: bool) -> Vec<Instruction> {
-    
+
     let init = process_test(buffer, test_args, entry, set_memory);
 
     let (res, tab) = resolve_labels(&init);

@@ -1,8 +1,7 @@
-
-use wasm2avm::process;
 use std::env;
 use std::fs::File;
 use std::io::Read;
+use wasm2avm::process;
 
 fn main() {
     let args: Vec<String> = env::args().collect();

@@ -1,17 +1,16 @@
-
 #![allow(dead_code)]
 
-mod utils;
 mod mavm;
 mod pos;
-mod uint256;
 mod stringtable;
+mod uint256;
+mod utils;
 
-use wasm_bindgen::prelude::*;
-use crate::utils::{process_wasm, has_label, get_inst, get_immed, resolve_labels, simple_op};
-use crate::mavm::{Label,Value,Instruction,AVMOpcode};
-use crate::uint256::{Uint256};
+use crate::mavm::{AVMOpcode, Instruction, Label, Value};
+use crate::uint256::Uint256;
+use crate::utils::{get_immed, get_inst, has_label, process_wasm, resolve_labels, simple_op};
 use ethers_core::utils::keccak256;
+use wasm_bindgen::prelude::*;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
 // allocator.
@@ -57,7 +56,7 @@ fn hash_instruction(inst: &Instruction, prev_hash: &Uint256) -> Uint256 {
             buf.push(1u8);
             buf.push(get_inst(inst));
             if let Value::Int(i) = immed.avm_hash() {
-                    // println!("immed hash {}", i);
+                // println!("immed hash {}", i);
                 push_bytes32(&mut buf, &i);
             }
             push_bytes32(&mut buf, prev_hash);
@@ -67,7 +66,7 @@ fn hash_instruction(inst: &Instruction, prev_hash: &Uint256) -> Uint256 {
     }
 }
 
-fn compute_hash(ops : &Vec<Instruction>) -> (Uint256, Uint256) {
+fn compute_hash(ops: &Vec<Instruction>) -> (Uint256, Uint256) {
     // start from errCodePoint
     let mut hash = hash_instruction(&simple_op(AVMOpcode::Zero), &Uint256::from_u64(0));
     let mut labels = vec![];
@@ -113,27 +112,27 @@ pub fn process(input: &[u8]) -> (Vec<u8>, Vec<u8>) {
         let inst = get_inst(&op);
         match get_immed(&op) {
             None => pushinst((inst as u32) as i32),
-            Some (Value::Int(a)) => {
+            Some(Value::Int(a)) => {
                 uintimmed(a.to_bytes_be().as_mut_ptr());
                 pushimmed((inst as u32) as i32);
-            },
-            Some (Value::Tuple(tup)) => {
+            }
+            Some(Value::Tuple(tup)) => {
                 if tup.len() == 2 {
                     specialimmed(tup.len() as i32);
                 } else {
                     globalimmed(tup.len() as i32);
                 }
                 pushimmed((inst as u32) as i32);
-            },
+            }
             _ => {
                 panic!("bad immed")
             }
         }
-        if has_label(&ops[ops.len()-idx-1]) {
+        if has_label(&ops[ops.len() - idx - 1]) {
             cptable(labels - num - 1);
-            num = num+1;
+            num = num + 1;
         }
-    };
+    }
 
     /*
     let (hash, thash) = compute_hash(&res_ops);
@@ -200,12 +199,12 @@ pub fn test() -> u32 {
 
     for i in 0..output.len() {
         write_buffer(i as i32, output[i as usize] as i32)
-    };
+    }
     setlen(output.len() as i32);
 
     for i in 0..extra.len() {
         wextra(i as i32, extra[i as usize] as i32)
-    };
+    }
 
     0
 }

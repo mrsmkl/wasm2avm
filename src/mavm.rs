@@ -3,9 +3,9 @@
  */
 
 // use crate::compile::{DebugInfo, MiniProperties};
+use crate::pos::Location;
 use crate::stringtable::StringId;
 use crate::uint256::Uint256;
-use crate::pos::Location;
 use ethers_core::utils::keccak256;
 use serde::de::Visitor;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
@@ -140,13 +140,9 @@ pub struct Instruction {
     pub immediate: Option<Value>,
 }
 
-
 impl Instruction {
     pub fn new(opcode: AVMOpcode, immediate: Option<Value>) -> Self {
-        Instruction {
-            opcode,
-            immediate,
-        }
+        Instruction { opcode, immediate }
     }
 
     pub fn from_opcode(opcode: AVMOpcode) -> Self {
@@ -169,10 +165,7 @@ impl Instruction {
 
     pub fn xlate_labels(self, xlate_map: &HashMap<Label, &Label>) -> Self {
         match self.immediate {
-            Some(val) => Instruction::from_opcode_imm(
-                self.opcode,
-                val.xlate_labels(xlate_map),
-            ),
+            Some(val) => Instruction::from_opcode_imm(self.opcode, val.xlate_labels(xlate_map)),
             None => self,
         }
     }
@@ -244,8 +237,7 @@ impl Instruction {
 }
 */
 
-impl fmt::Display for Instruction
-{
+impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.immediate {
             Some(v) => write!(f, "[{}]\n        {}", v, self.opcode),
@@ -752,7 +744,7 @@ impl Value {
             Value::Int(_) => Ok(self),
             Value::CodePoint(_) => Ok(self),
             Value::Buffer(_) => Ok(self),
-            Value::HashOnly(_,_) => Ok(self),
+            Value::HashOnly(_, _) => Ok(self),
             Value::Label(label) => {
                 let maybe_pc = label_map.get(&label);
                 match maybe_pc {
@@ -797,7 +789,7 @@ impl Value {
         func_offset: usize,
     ) -> (Self, usize) {
         match self {
-            Value::HashOnly(_,_) => (self, 0),
+            Value::HashOnly(_, _) => (self, 0),
             Value::Int(_) => (self, 0),
             Value::Buffer(_) => (self, 0),
             Value::Tuple(v) => {
@@ -831,7 +823,7 @@ impl Value {
 
     pub fn xlate_labels(self, label_map: &HashMap<Label, &Label>) -> Self {
         match self {
-            Value::Int(_) | Value::CodePoint(_) | Value::Buffer(_) | Value::HashOnly(_,_) => self,
+            Value::Int(_) | Value::CodePoint(_) | Value::Buffer(_) | Value::HashOnly(_, _) => self,
             Value::Tuple(v) => {
                 let mut newv = Vec::new();
                 for val in &*v {
@@ -860,7 +852,7 @@ impl Value {
 
     pub fn value_size(&self) -> u64 {
         match self {
-            Value::HashOnly(_,sz) => *sz, // this has to be changed for table
+            Value::HashOnly(_, sz) => *sz, // this has to be changed for table
             Value::Int(_) => 1,
             Value::Buffer(_) => 1,
             Value::Tuple(v) => {
@@ -878,9 +870,12 @@ impl Value {
 
     pub fn avm_hash(&self) -> Value {
         match self {
-            Value::HashOnly(ui,_) => Value::Int(ui.clone()),
+            Value::HashOnly(ui, _) => Value::Int(ui.clone()),
             Value::Int(ui) => Value::Int(ui.avm_hash()),
-            Value::Buffer(buf) => Value::avm_hash2(&Value::Int(Uint256::from_u64(123)), &Value::Int(buf.avm_hash())),
+            Value::Buffer(buf) => Value::avm_hash2(
+                &Value::Int(Uint256::from_u64(123)),
+                &Value::Int(buf.avm_hash()),
+            ),
             Value::Tuple(v) => {
                 let mut buf = vec![];
                 buf.push(v.len() as u8);
@@ -932,7 +927,7 @@ impl fmt::Display for Value {
             Value::Buffer(buf) => {
                 write!(f, "Buffer({})", buf.hex_encode())
             }
-            Value::HashOnly(i,_) => write!(f, "HashOnly({})", i),
+            Value::HashOnly(i, _) => write!(f, "HashOnly({})", i),
             Value::CodePoint(pc) => write!(f, "CodePoint({})", pc),
             Value::WasmCodePoint(v, _) => write!(f, "WasmCodePoint({})", v),
             Value::Label(label) => write!(f, "Label({})", label),
@@ -1505,4 +1500,3 @@ impl fmt::Display for AVMOpcode {
         write!(f, "{}", self.to_name())
     }
 }
-
