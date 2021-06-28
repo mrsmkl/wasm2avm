@@ -2246,23 +2246,32 @@ fn get_func_imports(m: &Module) -> Vec<&ImportEntry> {
     }
 }
 
-fn simple_table_aux(level: usize) -> Value {
-    if level == 0 {
-        let mut v = vec![];
-        for i in 0..8 {
-            v.push(int_from_usize(0))
-        }
-        return Value::new_tuple(v);
-    }
-    let mut v = vec![];
-    for i in 0..8 {
-        v.push(simple_table_aux(level - 1));
-    }
-    return Value::new_tuple(v);
+fn empty_tuple() -> Value {
+    Value::new_tuple(vec![
+        int_from_usize(0),
+        int_from_usize(0),
+        int_from_usize(0),
+        int_from_usize(0),
+        int_from_usize(0),
+        int_from_usize(0),
+        int_from_usize(0),
+        int_from_usize(0),
+    ])
 }
 
-pub fn simple_table() -> Value {
-    simple_table_aux(LEVEL - 1)
+fn empty_table(res: &mut Vec<Instruction>, n: usize) {
+    res.push(push_value(empty_tuple()));
+    for i in 1..n {
+        for i in 0..8 {
+            res.push(simple_op(AVMOpcode::Dup0));
+        }
+        res.push(push_value(empty_tuple()));
+        for i in 0..8 {
+            res.push(immed_op(AVMOpcode::Tset, int_from_usize(i)));
+        }
+        res.push(simple_op(AVMOpcode::Swap1));
+        res.push(simple_op(AVMOpcode::Pop));
+    }
 }
 
 pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
@@ -2278,20 +2287,28 @@ pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
     init.push(simple_op(AVMOpcode::Rget));
     init.push(simple_op(AVMOpcode::AuxPush));
 
+    empty_table(&mut init, LEVEL);
+
+    init.push(simple_op(AVMOpcode::NewBuffer));
+    init.push(push_value(int_from_usize(1000000000)));
+
     // Initialize register
     init.push(push_value(Value::new_tuple(vec![
-        Value::new_buffer(vec![]),  // memory
-        int_from_usize(0),          // call table
-        Value::new_buffer(vec![]),  // IO buffer
-        int_from_usize(0),          // IO len
-        int_from_usize(1000000000), // gas left
-        int_from_usize(0),          // Immed
-        int_from_usize(0),          // Code point
-        simple_table(),             // Generated jump table
+        int_from_usize(0), // memory
+        int_from_usize(0),         // call table
+        int_from_usize(0), // IO buffer
+        int_from_usize(0),         // IO len
+        int_from_usize(0),   // gas left
+        int_from_usize(0),         // Immed
+        int_from_usize(0),         // Code point
+        int_from_usize(0),            // Generated jump table
     ])));
-    init.push(immed_op(AVMOpcode::Tset, int_from_usize(1)));
-    init.push(immed_op(AVMOpcode::Tset, int_from_usize(2)));
-    init.push(immed_op(AVMOpcode::Tset, int_from_usize(3)));
+    init.push(immed_op(AVMOpcode::Tset, int_from_usize(4))); // gas left
+    init.push(immed_op(AVMOpcode::Tset, int_from_usize(0))); // memory
+    init.push(immed_op(AVMOpcode::Tset, int_from_usize(7))); // generated table
+    init.push(immed_op(AVMOpcode::Tset, int_from_usize(1))); // call table
+    init.push(immed_op(AVMOpcode::Tset, int_from_usize(2))); // IO buffer
+    init.push(immed_op(AVMOpcode::Tset, int_from_usize(3))); // IO len
     init.push(simple_op(AVMOpcode::Rset));
 
     init.push(simple_op(AVMOpcode::ErrCodePoint));
@@ -2690,16 +2707,7 @@ fn process_wasm_inner(
             init.push(simple_op(AVMOpcode::Rset));
         }
         if f.field().contains("globalimmed") {
-            init.push(push_value(Value::new_tuple(vec![
-                Value::new_buffer(vec![]), // memory
-                int_from_usize(0),         // call table
-                Value::new_buffer(vec![]), // IO buffer
-                int_from_usize(0),         // IO len
-                int_from_usize(1000000000),   // gas left
-                int_from_usize(0),         // Immed
-                int_from_usize(0),         // Instruction
-                simple_table(),
-            ])));
+            init.push(push_value(empty_tuple()));
             init.push(simple_op(AVMOpcode::Rget));
             init.push(immed_op(AVMOpcode::Tset, int_from_usize(5)));
             init.push(simple_op(AVMOpcode::Rset));
