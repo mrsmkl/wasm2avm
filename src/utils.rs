@@ -1,6 +1,5 @@
-use crate::mavm::DebugInfo;
 use crate::mavm::{
-    AVMOpcode, Buffer, CodePt, Instruction, Label, /*LabelGenerator,*/ Opcode, Value,
+    AVMOpcode, CodePt, Instruction, Label, Value,
 };
 use crate::uint256::Uint256;
 
@@ -867,7 +866,7 @@ fn handle_function(
 
     let mut unreachable = false;
 
-    for (idx_inf, op) in func.code().elements().iter().enumerate() {
+    for (_idx_inf, op) in func.code().elements().iter().enumerate() {
         /*
         println!(
             "handling ptr {} frames {}; {:?} ... label {} len {}",
@@ -879,7 +878,7 @@ fn handle_function(
         );
         */
         usegas(1);
-        let cur_len = res.len();
+        // let cur_len = res.len();
         // res.push(debug_op(format!("{:?} level {} func {} idx {}", *op, ptr, idx, idx_inf)));
         if unreachable {
             if *op == End {
@@ -2261,8 +2260,8 @@ fn empty_tuple() -> Value {
 
 fn empty_table(res: &mut Vec<Instruction>, n: usize) {
     res.push(push_value(empty_tuple()));
-    for i in 1..n {
-        for i in 0..8 {
+    for _i in 1..n {
+        for _i in 0..8 {
             res.push(simple_op(AVMOpcode::Dup0));
         }
         res.push(push_value(empty_tuple()));

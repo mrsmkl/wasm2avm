@@ -6,7 +6,7 @@ mod stringtable;
 mod uint256;
 mod utils;
 
-use crate::mavm::{AVMOpcode, Instruction, Label, Value};
+use crate::mavm::{AVMOpcode, Instruction, Value};
 use crate::uint256::Uint256;
 use crate::utils::{get_immed, get_inst, has_label, process_wasm, resolve_labels, simple_op};
 use ethers_core::utils::keccak256;
