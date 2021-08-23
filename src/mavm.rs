@@ -10,7 +10,7 @@ use ethers_core::utils::keccak256;
 use serde::de::Visitor;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use std::{cell::RefCell, collections::HashMap, fmt, rc::Rc};
+use std::{collections::HashMap, fmt, rc::Rc};
 
 ///Trait that identifies what mini compiler tracked properties a value implementing this trait has.
 ///
@@ -562,7 +562,7 @@ impl BufferNode {
     fn set_byte(&self, offset: u128, val: u8) -> Self {
         match self {
             BufferNode::Leaf(b) => {
-                if (offset < 32) {
+                if offset < 32 {
                     let mut bb = b.clone();
                     bb[offset as usize] = val;
                     BufferNode::Leaf(bb)
@@ -651,7 +651,7 @@ impl BufferInternal {
 fn _levels_needed(x: u128) -> (usize, u128) {
     let mut height = 1;
     let mut size = 32u128;
-    while (size < x) {
+    while size < x {
         height = height + 1;
         size = size * 2;
     }
@@ -799,7 +799,7 @@ impl Value {
                     let (new_val, new_func_offset) =
                         val.clone().relocate(int_offset, ext_offset, func_offset);
                     rel_v.push(new_val);
-                    if (max_func_offset < new_func_offset) {
+                    if max_func_offset < new_func_offset {
                         max_func_offset = new_func_offset;
                     }
                 }

@@ -174,7 +174,7 @@ impl Uint256 {
 
     pub fn rlp_encode(&self) -> Vec<u8> {
         // RLP encode the minimal byte representation of self
-        if (self.is_zero()) {
+        if self.is_zero() {
             vec![0x80u8]
         } else {
             rlp::encode(&self.to_bytes_minimal())
@@ -355,7 +355,7 @@ impl Uint256 {
     pub fn shift_arith(&self, raw_num: usize) -> Self {
         let need_fill = self.val.bits() == 256;
         let num = if raw_num > 256 { 256 } else { raw_num };
-        let mut val = (self.val.clone() >> num);
+        let mut val = self.val.clone() >> num;
         if need_fill {
             val = val + (Uint256::max_int().val << (256 - num))
         }
