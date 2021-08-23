@@ -2281,6 +2281,7 @@ pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
     init.push(simple_op(AVMOpcode::Noop));
     init.push(simple_op(AVMOpcode::Noop));
     init.push(simple_op(AVMOpcode::Noop));
+    init.push(simple_op(AVMOpcode::Noop));
 
     // Save register
     init.push(simple_op(AVMOpcode::Rget));
@@ -2305,6 +2306,7 @@ pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(4))); // gas left
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(0))); // memory
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(7))); // generated table
+    init.push(immed_op(AVMOpcode::Tset, int_from_usize(5))); // immed
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(1))); // call table
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(2))); // IO buffer
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(3))); // IO len
