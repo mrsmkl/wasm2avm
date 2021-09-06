@@ -38,14 +38,6 @@ fn block_len(bt: &BlockType) -> usize {
     }
 }
 
-/*
-fn count_locals(func: &FuncBody) -> usize {
-    func.locals()
-        .iter()
-        .fold(0, |sum, x| sum + x.count() as usize)
-}
-*/
-
 fn get_func_type(m: &Module, sig: u32) -> &FunctionType {
     match m.type_section().unwrap().types()[sig as usize] {
         Type::Function(ref t) => t,
@@ -63,7 +55,6 @@ pub fn simple_op(op: AVMOpcode) -> Instruction {
 /*
 fn debug_op(str: String) -> Instruction {
     Instruction::from_opcode(AVMOpcode::Noop)
-    // Instruction::debug(str, Opcode::AVMOpcode(AVMOpcode::Noop))
 }
 */
 
@@ -77,7 +68,6 @@ fn mk_label(idx: usize) -> Instruction {
 
 fn mk_func_label(idx: usize) -> Instruction {
     Instruction::from_opcode_imm(AVMOpcode::Label, Value::Label(Label::WasmFunc(idx)))
-    // Instruction::from_opcode(Opcode::Label(Label::WasmFunc(idx)), DebugInfo::from(None))
 }
 
 fn get_from_table(res: &mut Vec<Instruction>, idx: Value) {
@@ -178,10 +168,6 @@ fn get_frame() -> Instruction {
 
 fn get_return_pc() -> Instruction {
     Instruction::from_opcode_imm(AVMOpcode::Xget, Value::Int(Uint256::from_usize(1)))
-}
-
-fn push_frame(v: Value) -> Instruction {
-    Instruction::from_opcode_imm(AVMOpcode::AuxPush, v)
 }
 
 fn push_value(v: Value) -> Instruction {
@@ -521,7 +507,7 @@ fn make_popcnt(res: &mut Vec<Instruction>) {
         Value::Int(Uint256::from_u64(m1)),
     ));
     res.push(simple_op(AVMOpcode::Swap1));
-    res.push(simple_op(AVMOpcode::Minus));
+    res.push(simple_op(AVMOpcode::Sub));
     // x = (x & m2) + ((x >> 2) & m2);
     res.push(simple_op(AVMOpcode::Dup0));
     res.push(immed_op(
@@ -702,95 +688,6 @@ fn find_func_type(m: &Module, num: u32) -> &FunctionType {
     }
 }
 
-/*
-fn get_avm_gas(insn: &Instruction) -> usize {
-    match insn.opcode {
-        Opcode::AVMOpcode(AVMOpcode::Add) => 3,
-        Opcode::AVMOpcode(AVMOpcode::Mul) => 3,
-        Opcode::AVMOpcode(AVMOpcode::Minus) => 3,
-        Opcode::AVMOpcode(AVMOpcode::Div) => 4,
-        Opcode::AVMOpcode(AVMOpcode::Sdiv) => 7,
-        Opcode::AVMOpcode(AVMOpcode::Mod) => 4,
-        Opcode::AVMOpcode(AVMOpcode::Smod) => 7,
-        Opcode::AVMOpcode(AVMOpcode::AddMod) => 4,
-        Opcode::AVMOpcode(AVMOpcode::MulMod) => 4,
-        Opcode::AVMOpcode(AVMOpcode::Exp) => 25,
-        Opcode::AVMOpcode(AVMOpcode::SignExtend) => 7,
-        Opcode::AVMOpcode(AVMOpcode::LessThan) => 2,
-        Opcode::AVMOpcode(AVMOpcode::GreaterThan) => 2,
-        Opcode::AVMOpcode(AVMOpcode::SLessThan) => 2,
-        Opcode::AVMOpcode(AVMOpcode::SGreaterThan) => 2,
-        Opcode::AVMOpcode(AVMOpcode::Equal) => 2,
-        Opcode::AVMOpcode(AVMOpcode::IsZero) => 1,
-        Opcode::AVMOpcode(AVMOpcode::BitwiseAnd) => 2,
-        Opcode::AVMOpcode(AVMOpcode::BitwiseOr) => 2,
-        Opcode::AVMOpcode(AVMOpcode::BitwiseXor) => 2,
-        Opcode::AVMOpcode(AVMOpcode::BitwiseNeg) => 1,
-        Opcode::AVMOpcode(AVMOpcode::Byte) => 4,
-        Opcode::AVMOpcode(AVMOpcode::ShiftLeft) => 4,
-        Opcode::AVMOpcode(AVMOpcode::ShiftRight) => 4,
-        Opcode::AVMOpcode(AVMOpcode::ShiftArith) => 4,
-        Opcode::AVMOpcode(AVMOpcode::Hash) => 7,
-        Opcode::AVMOpcode(AVMOpcode::Type) => 3,
-        Opcode::AVMOpcode(AVMOpcode::Hash2) => 8,
-        Opcode::AVMOpcode(AVMOpcode::Keccakf) => 600,
-        Opcode::AVMOpcode(AVMOpcode::Sha256f) => 250,
-        Opcode::AVMOpcode(AVMOpcode::Ripemd160f) => 250, //TODO: measure and update this
-        Opcode::AVMOpcode(AVMOpcode::Pop) => 1,
-        Opcode::AVMOpcode(AVMOpcode::PushStatic) => 1,
-        Opcode::AVMOpcode(AVMOpcode::Rpush) => 1,
-        Opcode::AVMOpcode(AVMOpcode::Rset) => 2,
-        Opcode::AVMOpcode(AVMOpcode::Jump) => 4,
-        Opcode::AVMOpcode(AVMOpcode::Cjump) => 4,
-        Opcode::AVMOpcode(AVMOpcode::StackEmpty) => 2,
-        Opcode::AVMOpcode(AVMOpcode::GetPC) => 1,
-        Opcode::AVMOpcode(AVMOpcode::AuxPush) => 1,
-        Opcode::AVMOpcode(AVMOpcode::AuxPop) => 1,
-        Opcode::AVMOpcode(AVMOpcode::AuxStackEmpty) => 2,
-        Opcode::AVMOpcode(AVMOpcode::Noop) => 1,
-        Opcode::AVMOpcode(AVMOpcode::ErrPush) => 1,
-        Opcode::AVMOpcode(AVMOpcode::ErrSet) => 1,
-        Opcode::AVMOpcode(AVMOpcode::Dup0) => 1,
-        Opcode::AVMOpcode(AVMOpcode::Dup1) => 1,
-        Opcode::AVMOpcode(AVMOpcode::Dup2) => 1,
-        Opcode::AVMOpcode(AVMOpcode::Swap1) => 1,
-        Opcode::AVMOpcode(AVMOpcode::Swap2) => 1,
-        Opcode::AVMOpcode(AVMOpcode::Tget) => 2,
-        Opcode::AVMOpcode(AVMOpcode::Tset) => 40,
-        Opcode::AVMOpcode(AVMOpcode::Tlen) => 2,
-        Opcode::AVMOpcode(AVMOpcode::Xget) => 3,
-        Opcode::AVMOpcode(AVMOpcode::Xset) => 41,
-        Opcode::AVMOpcode(AVMOpcode::Breakpoint) => 100,
-        Opcode::AVMOpcode(AVMOpcode::Log) => 100,
-        Opcode::AVMOpcode(AVMOpcode::Send) => 100,
-        Opcode::AVMOpcode(AVMOpcode::InboxPeek) => 40,
-        Opcode::AVMOpcode(AVMOpcode::Inbox) => 40,
-        Opcode::AVMOpcode(AVMOpcode::Panic) => 5,
-        Opcode::AVMOpcode(AVMOpcode::Halt) => 10,
-        Opcode::AVMOpcode(AVMOpcode::ErrCodePoint) => 25,
-        Opcode::AVMOpcode(AVMOpcode::PushInsn) => 25,
-        Opcode::AVMOpcode(AVMOpcode::PushInsnImm) => 25,
-        Opcode::AVMOpcode(AVMOpcode::OpenInsn) => 25,
-        Opcode::AVMOpcode(AVMOpcode::DebugPrint) => 1,
-        Opcode::AVMOpcode(AVMOpcode::GetGas) => 1,
-        Opcode::AVMOpcode(AVMOpcode::SetGas) => 0,
-        Opcode::AVMOpcode(AVMOpcode::EcRecover) => 20_000,
-        Opcode::AVMOpcode(AVMOpcode::EcAdd) => 3500,
-        Opcode::AVMOpcode(AVMOpcode::EcMul) => 82_000,
-        // Opcode::AVMOpcode(AVMOpcode::EcPairing) => self.gas_for_pairing(),
-        Opcode::AVMOpcode(AVMOpcode::Sideload) => 10,
-        Opcode::AVMOpcode(AVMOpcode::NewBuffer) => 1,
-        Opcode::AVMOpcode(AVMOpcode::GetBuffer8) => 10,
-        Opcode::AVMOpcode(AVMOpcode::GetBuffer64) => 10,
-        Opcode::AVMOpcode(AVMOpcode::GetBuffer256) => 10,
-        Opcode::AVMOpcode(AVMOpcode::SetBuffer8) => 100,
-        Opcode::AVMOpcode(AVMOpcode::SetBuffer64) => 100,
-        Opcode::AVMOpcode(AVMOpcode::SetBuffer256) => 100,
-        _ => 0,
-    }
-}
-*/
-
 fn type_code(t: &ValueType) -> u8 {
     match *t {
         ValueType::I32 => 0,
@@ -878,7 +775,6 @@ fn handle_function(
         );
         */
         usegas(1);
-        // let cur_len = res.len();
         // res.push(debug_op(format!("{:?} level {} func {} idx {}", *op, ptr, idx, idx_inf)));
         if unreachable {
             if *op == End {
@@ -1017,21 +913,16 @@ fn handle_function(
             }
             Br(x) => {
                 let c = &stack[stack.len() - (*x as usize) - 1];
-                // println!("Debug br {:?} {}", c, c.level);
                 if !c.is_loop {
                     adjust_stack(res, ptr - c.level, c.rets);
                 } else {
                     adjust_stack(res, ptr - (c.level - c.rets), 0);
                 }
-                // adjust_stack(res, ptr - c.level, c.rets);
-                // ptr = ptr - c.rets;
                 unreachable = true;
                 jump(res, c.target);
             }
             BrIf(x) => {
                 let c = &stack[stack.len() - (*x as usize) - 1];
-                // res.push(debug_op(format!("Debug brif {:?} ptr {} next level: {} + {}", c, ptr, c.level, c.rets)));
-                // println!("Debug brif {:?} ptr {} next level: {} + {}", c, ptr, c.level, c.rets);
                 let continue_label = label;
                 let end_label = label + 1;
                 label = label + 2;
@@ -1043,7 +934,6 @@ fn handle_function(
                 } else {
                     adjust_stack(res, ptr - (c.level - c.rets) - 1, 0);
                 }
-                // adjust_stack(res, ptr - c.level - 1, c.rets);
                 jump(res, c.target);
                 res.push(mk_label(end_label));
                 ptr = ptr - 1;
@@ -1088,23 +978,9 @@ fn handle_function(
             // Just keep the expression stack
             Call(x) => {
                 let ftype = find_func_type(m, *x);
-                /*
-                println!(
-                    "calling {} with type {:?} return label {}",
-                    x,
-                    ftype,
-                    label + 1
-                );
-                */
                 let return_label = label;
                 label = label + 1;
                 // push new frame to aux stack
-
-                /*
-                res.push(push_frame(Value::new_tuple(vec![
-                    Value::new_buffer(vec![]),
-                    Value::Label(Label::Evm(return_label)),
-                ])));*/
 
                 res.push(simple_op(AVMOpcode::NewBuffer));
                 res.push(push_value(Value::Label(Label::Evm(return_label))));
@@ -1131,14 +1007,6 @@ fn handle_function(
             }
             CallIndirect(x, _) => {
                 let ftype = get_func_type(m, *x);
-                /*
-                println!(
-                    "call indirect {} with type {:?} return label {} hash {}",
-                    x,
-                    ftype,
-                    label + 1,
-                    hash_ftype(&ftype)
-                );*/
                 let return_label = label;
                 label = label + 1;
                 // Save func ptr
@@ -1383,7 +1251,7 @@ fn handle_function(
                 ptr = ptr - 1;
             }
             I32Sub => {
-                signed_op32_swap(res, AVMOpcode::Minus);
+                signed_op32_swap(res, AVMOpcode::Sub);
                 ptr = ptr - 1;
             }
             I32Eq => {
@@ -1561,7 +1429,7 @@ fn handle_function(
                 ptr = ptr - 1;
             }
             I64Sub => {
-                signed_op64_swap(res, AVMOpcode::Minus);
+                signed_op64_swap(res, AVMOpcode::Sub);
                 ptr = ptr - 1;
             }
             I64Eq => {
@@ -1781,13 +1649,6 @@ fn handle_function(
             }*/
         }
 
-        /*
-        let mut gas_acc = 0;
-        for i in cur_len..res.len() {
-            gas_acc += get_avm_gas(&res[i])
-        }
-        avm_gas.push(gas_acc);
-        */
     }
 
     // Function return
@@ -1910,12 +1771,6 @@ fn inst_replace_labels(
 
 pub fn has_label(inst: &Instruction) -> bool {
     inst.opcode == AVMOpcode::Label
-    /*
-    match inst.immediate {
-        Some(Value::Label(Label::Evm(_))) => true,
-        Some(Value::Label(Label::WasmFunc(_))) => true,
-        _ => false,
-    }*/
 }
 
 pub fn get_inst(inst: &Instruction) -> u8 {
@@ -2095,13 +1950,13 @@ pub fn process_wasm(buffer: &[u8]) -> Vec<Instruction> {
     // Initialize register
     init.push(push_value(Value::new_tuple(vec![
         int_from_usize(0), // memory
-        int_from_usize(0),         // call table
+        int_from_usize(0), // call table
         int_from_usize(0), // IO buffer
-        int_from_usize(0),         // IO len
-        int_from_usize(0),   // gas left
-        int_from_usize(0),         // Immed
-        int_from_usize(0),         // Code point
-        int_from_usize(0),            // Generated jump table
+        int_from_usize(0), // IO len
+        int_from_usize(0), // gas left
+        int_from_usize(0), // Immed
+        int_from_usize(0), // Code point
+        int_from_usize(0), // Generated jump table
     ])));
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(4))); // gas left
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(0))); // memory
@@ -2162,6 +2017,8 @@ fn process_test(
         Value::new_buffer(vec![]), // IO buffer
         int_from_usize(0),         // IO len
         int_from_usize(100000),    // gas left
+        int_from_usize(0),         // Immed
+        int_from_usize(0),         // Instruction
     ])));
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(0)));
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(1)));
@@ -2259,12 +2116,7 @@ fn process_wasm_inner(
     ])));
     init.push(immed_op(AVMOpcode::Tset, int_from_usize(1)));
     init.push(simple_op(AVMOpcode::AuxPush));
-    /*
-        init.push(push_frame(Value::new_tuple(vec![
-            Value::new_buffer(vec![]),
-            Value::Label(Label::WasmFunc(f_count + 1)),
-        ])));
-    */
+
     // Add test arguments to the frame
     for (i, arg) in test_args.iter().enumerate() {
         init.push(get_frame());
@@ -2294,9 +2146,7 @@ fn process_wasm_inner(
             memory_offset,
             max_memory,
         );
-        // init.append(res);
         label = n_label;
-        // println!("Gas {:?}", avm_gas);
     }
 
     usegas(10000);
@@ -2349,7 +2199,7 @@ fn process_wasm_inner(
             init.push(get_frame());
             init.push(get64_from_buffer(0));
             get_gas_left(init);
-            init.push(simple_op(AVMOpcode::Minus));
+            init.push(simple_op(AVMOpcode::Sub));
             set_gas_left(init);
         }
         if f.field().contains("rvec") {
@@ -2697,39 +2547,5 @@ fn process_wasm_inner(
 
     // Cleaning up
     init.push(mk_func_label(f_count + 1));
-    // init.push(debug_op("Cleaning up".to_string()));
 }
 
-/*
-pub fn load(buffer: &[u8], param: &[u8]) -> Vec<Instruction> {
-
-    let init = process_wasm(buffer);
-
-    let (res, tab) = resolve_labels(&init);
-    let res = clear_labels(res);
-    let mut a = vec![];
-    a.push(push_value(int_from_usize(param.len())));
-    // a.push(push_value(int_from_usize(10000)));
-    a.push(push_value(Value::new_buffer(param.to_vec())));
-    a.push(push_value(tab));
-    for i in 3..res.len() {
-        a.push(res[i].clone());
-    }
-    a
-}
-
-pub fn make_test(buffer: &[u8], prev_memory: &Buffer, test_args: &[u64], entry: &String, set_memory: bool) -> Vec<Instruction> {
-
-    let init = process_test(buffer, test_args, entry, set_memory);
-
-    let (res, tab) = resolve_labels(&init);
-    let res = clear_labels(res);
-    let mut a = vec![];
-    a.push(push_value(tab));
-    a.push(push_value(Value::Buffer(prev_memory.clone())));
-    for i in 3..res.len() {
-        a.push(res[i].clone());
-    }
-    a
-}
-*/

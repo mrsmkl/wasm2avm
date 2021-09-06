@@ -10,7 +10,7 @@ use ethers_core::utils::keccak256;
 use serde::de::Visitor;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use std::{collections::HashMap, fmt, rc::Rc};
+use std::{fmt, rc::Rc};
 
 ///Trait that identifies what mini compiler tracked properties a value implementing this trait has.
 ///
@@ -722,7 +722,7 @@ pub enum AVMOpcode {
     Zero = 0x00,
     Add = 0x01,
     Mul,
-    Minus,
+    Sub,
     Div,
     Sdiv,
     Mod,
@@ -866,7 +866,7 @@ impl Opcode {
             "blake2f" => Opcode::AVMOpcode(AVMOpcode::Blake2f),
             "length" => Opcode::AVMOpcode(AVMOpcode::Tlen),
             "plus" => Opcode::AVMOpcode(AVMOpcode::Add),
-            "minus" => Opcode::AVMOpcode(AVMOpcode::Minus),
+            "minus" => Opcode::AVMOpcode(AVMOpcode::Sub),
             "mul" => Opcode::AVMOpcode(AVMOpcode::Mul),
             "div" => Opcode::AVMOpcode(AVMOpcode::Div),
             "mod" => Opcode::AVMOpcode(AVMOpcode::Mod),
@@ -973,7 +973,7 @@ impl AVMOpcode {
             AVMOpcode::Blake2f => "blake2f",
             AVMOpcode::Tlen => "length",
             AVMOpcode::Add => "plus",
-            AVMOpcode::Minus => "minus",
+            AVMOpcode::Sub => "minus",
             AVMOpcode::Mul => "mul",
             AVMOpcode::Div => "div",
             AVMOpcode::Mod => "mod",
@@ -1041,7 +1041,7 @@ impl AVMOpcode {
             0x00 => Some(AVMOpcode::Zero),
             0x01 => Some(AVMOpcode::Add),
             0x02 => Some(AVMOpcode::Mul),
-            0x03 => Some(AVMOpcode::Minus),
+            0x03 => Some(AVMOpcode::Sub),
             0x04 => Some(AVMOpcode::Div),
             0x05 => Some(AVMOpcode::Sdiv),
             0x06 => Some(AVMOpcode::Mod),
@@ -1133,7 +1133,7 @@ impl AVMOpcode {
             AVMOpcode::Zero => 0,
             AVMOpcode::Add => 0x01,
             AVMOpcode::Mul => 0x02,
-            AVMOpcode::Minus => 0x03,
+            AVMOpcode::Sub => 0x03,
             AVMOpcode::Div => 0x04,
             AVMOpcode::Sdiv => 0x05,
             AVMOpcode::Mod => 0x06,
