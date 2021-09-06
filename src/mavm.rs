@@ -152,90 +152,7 @@ impl Instruction {
     pub fn from_opcode_imm(opcode: AVMOpcode, immediate: Value) -> Self {
         Instruction::new(opcode, Some(immediate))
     }
-
-    pub fn replace_labels(self, label_map: &HashMap<Label, CodePt>) -> Result<Self, Label> {
-        match self.immediate {
-            Some(val) => Ok(Instruction::from_opcode_imm(
-                self.opcode,
-                val.replace_labels(label_map)?,
-            )),
-            None => Ok(self),
-        }
-    }
-
-    pub fn xlate_labels(self, xlate_map: &HashMap<Label, &Label>) -> Self {
-        match self.immediate {
-            Some(val) => Instruction::from_opcode_imm(self.opcode, val.xlate_labels(xlate_map)),
-            None => self,
-        }
-    }
 }
-
-/*
-impl Instruction<AVMOpcode> {
-    pub fn _upload(&self, u: &mut CodeUploader) {
-        u._push_byte(self.opcode.to_number());
-        if let Some(val) = &self.immediate {
-            u._push_byte(1u8);
-            val._upload(u);
-        } else {
-            u._push_byte(0u8);
-        }
-    }
-}
-*/
-
-/*
-impl Instruction {
-    pub fn is_pure(&self) -> bool {
-        self.opcode.is_pure()
-    }
-    pub fn get_label(&self) -> Option<&Label> {
-        match &self.opcode {
-            Opcode::Label(label) => Some(label),
-            _ => None,
-        }
-    }
-
-    pub fn relocate(
-        self,
-        int_offset: usize,
-        ext_offset: usize,
-        func_offset: usize,
-        globals_offset: usize,
-    ) -> (Self, usize) {
-        let mut max_func_offset = func_offset;
-        let opcode = match self.opcode {
-            Opcode::PushExternal(off) => Opcode::PushExternal(off + ext_offset),
-            Opcode::Label(label) => {
-                let (new_label, new_func_offset) =
-                    label.relocate(int_offset, ext_offset, func_offset);
-                if max_func_offset < new_func_offset {
-                    max_func_offset = new_func_offset;
-                }
-                Opcode::Label(new_label)
-            }
-            Opcode::GetGlobalVar(idx) => Opcode::GetGlobalVar(idx + globals_offset),
-            Opcode::SetGlobalVar(idx) => Opcode::SetGlobalVar(idx + globals_offset),
-            _ => self.opcode,
-        };
-        let imm = match self.immediate {
-            Some(imm) => {
-                let (new_imm, new_func_offset) = imm.relocate(int_offset, ext_offset, func_offset);
-                if max_func_offset < new_func_offset {
-                    max_func_offset = new_func_offset;
-                }
-                Some(new_imm)
-            }
-            None => None,
-        };
-        (
-            Instruction::new(opcode, imm),
-            max_func_offset,
-        )
-    }
-}
-*/
 
 impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -266,20 +183,6 @@ impl CodePt {
     pub fn new_in_segment(seg_num: usize, offset: usize) -> Self {
         CodePt::InSegment(seg_num, offset)
     }
-
-    /*
-    pub fn _upload(&self, u: &mut CodeUploader) {
-        match self {
-            CodePt::Internal(pc) => {
-                u._push_byte(1);
-                u._push_bytes(&Uint256::from_usize(u._translate_pc(*pc)).rlp_encode());
-            }
-            _ => {
-                panic!();
-            }
-        }
-    }
-    */
 
     pub fn incr(&self) -> Option<Self> {
         match self {
@@ -688,166 +591,8 @@ impl Value {
         Value::Buffer(v)
     }
 
-    /*
-    pub fn _upload(&self, u: &mut CodeUploader) {
-        match self {
-            Value::Int(ui) => {
-                u._push_byte(0u8); // type code for uint
-                u._push_bytes(&ui.rlp_encode());
-            }
-            Value::Tuple(tup) => {
-                u._push_byte((10 + tup.len()) as u8);
-                for subval in &**tup {
-                    subval._upload(u);
-                }
-            }
-            Value::CodePoint(cp) => {
-                cp._upload(u);
-            }
-            Value::Buffer(buf) => {
-                if buf.size == 0 {
-                    u._push_byte(2u8);
-                } else {
-                    panic!();
-                }
-            }
-            _ => {
-                println!("unable to upload value: {}", self);
-                panic!();
-            } // other types should never be encountered here
-        }
-    }
-    */
-
     pub fn is_none(&self) -> bool {
         self == &Value::none()
-    }
-
-    pub fn type_insn_result(&self) -> usize {
-        match self {
-            Value::Int(_) => 0,
-            Value::CodePoint(_) => 1,
-            Value::Tuple(_) => 3,
-            Value::Buffer(_) => 4,
-            Value::WasmCodePoint(_, _) => 5,
-            Value::Label(_) => {
-                panic!("tried to run type instruction on a label");
-            }
-            Value::HashOnly(_, _) => {
-                panic!("tried to run type instruction on a hashed value");
-            }
-        }
-    }
-
-    pub fn replace_labels(self, label_map: &HashMap<Label, CodePt>) -> Result<Self, Label> {
-        match self {
-            Value::Int(_) => Ok(self),
-            Value::CodePoint(_) => Ok(self),
-            Value::Buffer(_) => Ok(self),
-            Value::HashOnly(_, _) => Ok(self),
-            Value::Label(label) => {
-                let maybe_pc = label_map.get(&label);
-                match maybe_pc {
-                    Some(pc) => Ok(Value::CodePoint(*pc)),
-                    None => Err(label),
-                }
-            }
-            Value::WasmCodePoint(v, code) => Ok(Value::WasmCodePoint(
-                Box::new(v.replace_labels(label_map)?),
-                code.clone(),
-            )),
-            Value::Tuple(tup) => {
-                let mut new_vec = Vec::new();
-                for v in tup.iter() {
-                    let val = v.clone();
-                    new_vec.push(val.replace_labels(label_map)?);
-                }
-                Ok(Value::new_tuple(new_vec))
-            }
-        }
-    }
-
-    pub fn replace_last_none(&self, val: &Value) -> Self {
-        if self.is_none() {
-            return val.clone();
-        }
-        if let Value::Tuple(tup) = self {
-            let tlen = tup.len();
-            let mut mut_tup = tup.clone();
-            let new_tup = Rc::<Vec<Value>>::make_mut(&mut mut_tup);
-            new_tup[tlen - 1] = new_tup[tlen - 1].replace_last_none(val);
-            Value::new_tuple(new_tup.to_vec())
-        } else {
-            panic!();
-        }
-    }
-
-    pub fn relocate(
-        self,
-        int_offset: usize,
-        ext_offset: usize,
-        func_offset: usize,
-    ) -> (Self, usize) {
-        match self {
-            Value::HashOnly(_, _) => (self, 0),
-            Value::Int(_) => (self, 0),
-            Value::Buffer(_) => (self, 0),
-            Value::Tuple(v) => {
-                let mut rel_v = Vec::new();
-                let mut max_func_offset = 0;
-                for val in &*v {
-                    let (new_val, new_func_offset) =
-                        val.clone().relocate(int_offset, ext_offset, func_offset);
-                    rel_v.push(new_val);
-                    if max_func_offset < new_func_offset {
-                        max_func_offset = new_func_offset;
-                    }
-                }
-                (Value::new_tuple(rel_v), max_func_offset)
-            }
-            Value::CodePoint(cpt) => (Value::CodePoint(cpt.relocate(int_offset, ext_offset)), 0),
-            Value::WasmCodePoint(v, code) => {
-                let (new_val, new_func_offset) = v.relocate(int_offset, ext_offset, func_offset);
-                (
-                    Value::WasmCodePoint(Box::new(new_val), code.clone()),
-                    new_func_offset,
-                )
-            }
-            Value::Label(label) => {
-                let (new_label, new_func_offset) =
-                    label.relocate(int_offset, ext_offset, func_offset);
-                (Value::Label(new_label), new_func_offset)
-            }
-        }
-    }
-
-    pub fn xlate_labels(self, label_map: &HashMap<Label, &Label>) -> Self {
-        match self {
-            Value::Int(_) | Value::CodePoint(_) | Value::Buffer(_) | Value::HashOnly(_, _) => self,
-            Value::Tuple(v) => {
-                let mut newv = Vec::new();
-                for val in &*v {
-                    newv.push(val.clone().xlate_labels(label_map));
-                }
-                Value::new_tuple(newv)
-            }
-            Value::WasmCodePoint(v, code) => {
-                let new_val = v.clone().xlate_labels(label_map);
-                Value::WasmCodePoint(Box::new(new_val), code.clone())
-            }
-            Value::Label(label) => match label_map.get(&label) {
-                Some(label2) => Value::Label(**label2),
-                None => self,
-            },
-        }
-    }
-
-    ///Converts `Value` to usize if possible, otherwise returns `None`.
-    pub fn to_usize(&self) -> Option<usize> {
-        match self {
-            Value::Int(i) => i.to_usize(),
-            _ => None,
-        }
     }
 
     pub fn value_size(&self) -> u64 {
@@ -975,7 +720,7 @@ pub enum Opcode {
 #[repr(u8)]
 pub enum AVMOpcode {
     Zero = 0x00,
-    Plus = 0x01,
+    Add = 0x01,
     Mul,
     Minus,
     Div,
@@ -1009,7 +754,7 @@ pub enum AVMOpcode {
     Blake2f,
     Pop = 0x30,
     PushStatic,
-    Rget,
+    Rpush,
     Rset,
     Jump,
     Cjump,
@@ -1071,7 +816,7 @@ impl Opcode {
             | Opcode::AVMOpcode(AVMOpcode::InboxPeek)
             | Opcode::AVMOpcode(AVMOpcode::Send)
             | Opcode::AVMOpcode(AVMOpcode::Rset)
-            | Opcode::AVMOpcode(AVMOpcode::Rget)
+            | Opcode::AVMOpcode(AVMOpcode::Rpush)
             | Opcode::AVMOpcode(AVMOpcode::PushInsn)
             | Opcode::AVMOpcode(AVMOpcode::PushInsnImm)
             | Opcode::AVMOpcode(AVMOpcode::ErrCodePoint)
@@ -1093,7 +838,7 @@ impl Opcode {
     pub fn from_name(name: &str) -> Self {
         match name {
             "noop" => Opcode::AVMOpcode(AVMOpcode::Noop),
-            "rget" => Opcode::AVMOpcode(AVMOpcode::Rget),
+            "rget" => Opcode::AVMOpcode(AVMOpcode::Rpush),
             "rset" => Opcode::AVMOpcode(AVMOpcode::Rset),
             "pushstatic" => Opcode::AVMOpcode(AVMOpcode::PushStatic),
             "tset" => Opcode::AVMOpcode(AVMOpcode::Tset),
@@ -1120,7 +865,7 @@ impl Opcode {
             "ripemd160f" => Opcode::AVMOpcode(AVMOpcode::Ripemd160f),
             "blake2f" => Opcode::AVMOpcode(AVMOpcode::Blake2f),
             "length" => Opcode::AVMOpcode(AVMOpcode::Tlen),
-            "plus" => Opcode::AVMOpcode(AVMOpcode::Plus),
+            "plus" => Opcode::AVMOpcode(AVMOpcode::Add),
             "minus" => Opcode::AVMOpcode(AVMOpcode::Minus),
             "mul" => Opcode::AVMOpcode(AVMOpcode::Mul),
             "div" => Opcode::AVMOpcode(AVMOpcode::Div),
@@ -1201,7 +946,7 @@ impl From<AVMOpcode> for Opcode {
 impl AVMOpcode {
     fn to_name(&self) -> &str {
         match self {
-            AVMOpcode::Rget => "rget",
+            AVMOpcode::Rpush => "rget",
             AVMOpcode::Rset => "rset",
             AVMOpcode::PushStatic => "pushstatic",
             AVMOpcode::Tset => "tset",
@@ -1227,7 +972,7 @@ impl AVMOpcode {
             AVMOpcode::Ripemd160f => "ripemd160f",
             AVMOpcode::Blake2f => "blake2f",
             AVMOpcode::Tlen => "length",
-            AVMOpcode::Plus => "plus",
+            AVMOpcode::Add => "plus",
             AVMOpcode::Minus => "minus",
             AVMOpcode::Mul => "mul",
             AVMOpcode::Div => "div",
@@ -1294,7 +1039,7 @@ impl AVMOpcode {
     pub fn from_number(num: usize) -> Option<Self> {
         match num {
             0x00 => Some(AVMOpcode::Zero),
-            0x01 => Some(AVMOpcode::Plus),
+            0x01 => Some(AVMOpcode::Add),
             0x02 => Some(AVMOpcode::Mul),
             0x03 => Some(AVMOpcode::Minus),
             0x04 => Some(AVMOpcode::Div),
@@ -1328,7 +1073,7 @@ impl AVMOpcode {
             0x26 => Some(AVMOpcode::Blake2f),
             0x30 => Some(AVMOpcode::Pop),
             0x31 => Some(AVMOpcode::PushStatic),
-            0x32 => Some(AVMOpcode::Rget),
+            0x32 => Some(AVMOpcode::Rpush),
             0x33 => Some(AVMOpcode::Rset),
             0x34 => Some(AVMOpcode::Jump),
             0x35 => Some(AVMOpcode::Cjump),
@@ -1386,7 +1131,7 @@ impl AVMOpcode {
     pub fn to_number(&self) -> u8 {
         match self {
             AVMOpcode::Zero => 0,
-            AVMOpcode::Plus => 0x01,
+            AVMOpcode::Add => 0x01,
             AVMOpcode::Mul => 0x02,
             AVMOpcode::Minus => 0x03,
             AVMOpcode::Div => 0x04,
@@ -1420,7 +1165,7 @@ impl AVMOpcode {
             AVMOpcode::Blake2f => 0x26,
             AVMOpcode::Pop => 0x30,
             AVMOpcode::PushStatic => 0x31,
-            AVMOpcode::Rget => 0x32,
+            AVMOpcode::Rpush => 0x32,
             AVMOpcode::Rset => 0x33,
             AVMOpcode::Jump => 0x34,
             AVMOpcode::Cjump => 0x35,
@@ -1472,15 +1217,6 @@ impl AVMOpcode {
             AVMOpcode::CompileWasm => 0xa8,
             AVMOpcode::MakeWasm => 0xa9,
             _ => 0x00,
-        }
-    }
-}
-
-#[test]
-fn test_consistent_opcode_numbers() {
-    for i in 0..256 {
-        if let Some(op) = AVMOpcode::from_number(i) {
-            assert_eq!(i as u8, op.to_number());
         }
     }
 }
